@@ -1,0 +1,48 @@
+[package]
+name = "demo"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Package allowing to build WASM binary for the program and IDL file for it"
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+demo-app.workspace = true
+sails-rs.workspace = true
+
+[features]
+wasm-binary = []
+
+[dev-dependencies]
+demo = { path = ".", features = ["wasm-binary"] }
+sails-rs = { workspace = true, features = ["gtest"] }
+demo-client.workspace = true
+tokio.workspace = true
+
+[build-dependencies]
+sails-rs = { workspace = true, features = ["wasm-builder", "idl-gen", "std"] }
+demo-app.workspace = true
+
+[workspace]
+resolver = "3"
+members = ["app", "client"]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2024"
+rust-version = "1.91"
+repository = "https://github.com/gear-tech/demo"
+license = "MIT"
+keywords = ["gear", "sails", "smart-contracts", "wasm", "no-std"]
+categories = ["cryptography::cryptocurrencies", "no-std", "wasm"]
+
+[workspace.dependencies]
+sails-rs = "1.0.0-beta.2"
+tokio = { version = "1.48.0", features = ["macros", "rt"] }
+demo-app = { version = "0.1.0", path = "app" }
+demo-client = { version = "0.1.0", path = "client" }

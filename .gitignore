@@ -1,0 +1,21 @@
+# Rust
+target/
+*.swp
+*.swo
+
+# Node
+node_modules/
+dist/
+frontend/.env
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Build artifacts
+*.wasm
+!*.opt.wasm
+
+# Note: demo.idl and frontend/src/assets/demo.idl are checked in
+# so the frontend works immediately after clone without building Rust first.
