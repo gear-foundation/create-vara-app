@@ -19,13 +19,14 @@ wasm-binary = []
 
 [dev-dependencies]
 demo = { path = ".", features = ["wasm-binary"] }
-sails-rs = { workspace = true, features = ["gtest"] }
+demo-app.workspace = true
 demo-client.workspace = true
-tokio.workspace = true
+sails-rs = { workspace = true, features = ["gtest", "gclient"] }
+tokio = { workspace = true, features = ["rt", "macros"] }
 
 [build-dependencies]
-sails-rs = { workspace = true, features = ["wasm-builder", "idl-gen", "std"] }
 demo-app.workspace = true
+sails-rs = { workspace = true, features = ["build"] }
 
 [workspace]
 resolver = "3"
@@ -42,7 +43,7 @@ keywords = ["gear", "sails", "smart-contracts", "wasm", "no-std"]
 categories = ["cryptography::cryptocurrencies", "no-std", "wasm"]
 
 [workspace.dependencies]
-sails-rs = "1.0.0-beta.2"
-tokio = { version = "1.48.0", features = ["macros", "rt"] }
+sails-rs = "0.10.3"
+tokio = "1.48.0"
 demo-app = { version = "0.1.0", path = "app" }
 demo-client = { version = "0.1.0", path = "client" }

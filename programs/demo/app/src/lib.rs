@@ -2,7 +2,7 @@
 #![allow(static_mut_refs)]
 
 use sails_rs::{
-    gstd::{exec, msg, service},
+    gstd::{exec, msg},
     prelude::*,
 };
 
@@ -41,20 +41,18 @@ fn seed() {
 // Types
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Encode, Decode, TypeInfo, ReflectHash)]
+#[derive(Clone, Debug, Encode, Decode, TypeInfo)]
 #[codec(crate = sails_rs::scale_codec)]
 #[scale_info(crate = sails_rs::scale_info)]
-#[reflect_hash(crate = sails_rs::sails_reflect_hash)]
 pub struct StoredMessage {
     pub sender: ActorId,
     pub text: String,
     pub block_height: u32,
 }
 
-#[derive(Clone, Debug, Encode, Decode, TypeInfo, ReflectHash)]
+#[derive(Clone, Debug, Encode, Decode, TypeInfo)]
 #[codec(crate = sails_rs::scale_codec)]
 #[scale_info(crate = sails_rs::scale_info)]
-#[reflect_hash(crate = sails_rs::sails_reflect_hash)]
 pub struct StateView {
     pub counter: u64,
     pub last_caller: Option<ActorId>,
@@ -67,10 +65,9 @@ pub struct StateView {
 // ---------------------------------------------------------------------------
 
 #[event]
-#[derive(Encode, Decode, TypeInfo, ReflectHash)]
+#[derive(Encode, Decode, TypeInfo)]
 #[codec(crate = sails_rs::scale_codec)]
 #[scale_info(crate = sails_rs::scale_info)]
-#[reflect_hash(crate = sails_rs::sails_reflect_hash)]
 pub enum DemoEvents {
     Incremented {
         new_value: u64,
@@ -96,15 +93,14 @@ pub enum DemoEvents {
 pub struct DemoService(());
 
 impl DemoService {
-    pub fn new() -> Self {
+    pub fn create() -> Self {
         Self(())
     }
 }
 
-#[service(events = DemoEvents)]
+#[sails_rs::service(events = DemoEvents)]
 impl DemoService {
     // -- Commands --
-    // ADD YOUR COMMANDS HERE (copy this pattern)
 
     /// Increment the counter by 1. Returns the new value.
     #[export]
@@ -159,7 +155,6 @@ impl DemoService {
             panic!("Delay must be at least 1 block");
         }
 
-        // Encode the Sails route payload for Demo::HandlePing
         let payload = ["Demo".encode(), "HandlePing".encode()].concat();
 
         msg::send_bytes_with_gas_delayed(
@@ -191,7 +186,6 @@ impl DemoService {
     }
 
     // -- Queries --
-    // ADD YOUR QUERIES HERE (copy this pattern)
 
     /// Get a summary of the current state.
     #[export]
@@ -225,16 +219,16 @@ impl DemoService {
 #[derive(Default)]
 pub struct Program(());
 
-#[program]
+#[sails_rs::program]
 impl Program {
     /// Constructor: initializes program state.
-    pub fn new() -> Self {
+    pub fn create() -> Self {
         seed();
         Self(())
     }
 
     /// Exposed service.
     pub fn demo(&self) -> DemoService {
-        DemoService::new()
+        DemoService::create()
     }
 }
