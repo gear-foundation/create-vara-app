@@ -105,6 +105,11 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
 
   async function handleSchedulePing() {
     if (!api || !account) return;
+    if (schDelay < 1) {
+      setSchedulePingError("delay must be at least 1");
+      setSchedulePingPhase("error");
+      return;
+    }
     setSchedulePingPhase("signing");
     setSchedulePingError(null);
     try {
@@ -127,6 +132,11 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
 
   async function handleSendMessage() {
     if (!api || !account) return;
+    if (!senText || !senText.trim()) {
+      setSendMessageError("text cannot be empty");
+      setSendMessagePhase("error");
+      return;
+    }
     setSendMessagePhase("signing");
     setSendMessageError(null);
     try {
@@ -149,6 +159,11 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
 
   async function handleSetGreeting() {
     if (!api || !account) return;
+    if (!setGreeting || !setGreeting.trim()) {
+      setSetGreetingError("greeting cannot be empty");
+      setSetGreetingPhase("error");
+      return;
+    }
     setSetGreetingPhase("signing");
     setSetGreetingError(null);
     try {
@@ -220,7 +235,10 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
         <div className="py-5">
           <label className="block text-sm text-zinc-400 font-medium mb-2">SendMessage</label>
           <div className="flex gap-2 items-center">
-            <input type="text" value={senText} onChange={(e) => setSendMessageText(e.target.value)} placeholder="text..." className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />
+            <div className="flex-1 relative">
+              <input type="text" value={senText} onChange={(e) => setSendMessageText(e.target.value)} placeholder="text..." className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />
+              {senText.length > 0 && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-600">{senText.length}</span>}
+            </div>
             <button onClick={handleSendMessage} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-all disabled:opacity-30 active:scale-[0.97] ml-auto">SendMessage</button>
           </div>
           <TxStatus phase={senPhase} error={senError} onDismiss={() => { setSendMessagePhase("idle"); setSendMessageError(null); }} />
@@ -229,7 +247,10 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
         <div className="pt-5">
           <label className="block text-sm text-zinc-400 font-medium mb-2">SetGreeting</label>
           <div className="flex gap-2 items-center">
-            <input type="text" value={setGreeting} onChange={(e) => setSetGreetingGreeting(e.target.value)} placeholder="greeting..." className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />
+            <div className="flex-1 relative">
+              <input type="text" value={setGreeting} onChange={(e) => setSetGreetingGreeting(e.target.value)} placeholder="greeting..." className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />
+              {setGreeting.length > 0 && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-600">{setGreeting.length}</span>}
+            </div>
             <button onClick={handleSetGreeting} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-all disabled:opacity-30 active:scale-[0.97] ml-auto">SetGreeting</button>
           </div>
           <TxStatus phase={setPhase} error={setError} onDismiss={() => { setSetGreetingPhase("idle"); setSetGreetingError(null); }} />

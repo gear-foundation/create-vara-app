@@ -453,6 +453,25 @@ function generateActionsPanel(
 
     L.push(`  async function handle${cmd.name}() {`);
     L.push(`    if (!api || !account) return;`);
+
+    // Client-side validation for each param
+    for (const p of params) {
+      const stateVar = `${prefix}${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`;
+      if (p.typeLabel === "str" || p.typeLabel === "char") {
+        L.push(`    if (!${stateVar} || !${stateVar}.trim()) {`);
+        L.push(`      set${cmd.name}Error("${p.name} cannot be empty");`);
+        L.push(`      set${cmd.name}Phase("error");`);
+        L.push(`      return;`);
+        L.push(`    }`);
+      } else if (isSmallNumeric(p.typeLabel)) {
+        L.push(`    if (${stateVar} < 1) {`);
+        L.push(`      set${cmd.name}Error("${p.name} must be at least 1");`);
+        L.push(`      set${cmd.name}Phase("error");`);
+        L.push(`      return;`);
+        L.push(`    }`);
+      }
+    }
+
     L.push(`    set${cmd.name}Phase("signing");`);
     L.push(`    set${cmd.name}Error(null);`);
     L.push(`    try {`);
@@ -527,7 +546,10 @@ function generateActionsPanel(
         const setterVar = `set${cmd.name}${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`;
 
         if (p.typeLabel === "str" || p.typeLabel === "char") {
-          L.push(`            <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name}..." className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />`);
+          L.push(`            <div className="flex-1 relative">`);
+          L.push(`              <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name}..." className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />`);
+          L.push(`              {${stateVar}.length > 0 && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-600">{${stateVar}.length}</span>}`);
+          L.push(`            </div>`);
         } else if (isSmallNumeric(p.typeLabel)) {
           L.push(`            <input type="number" value={${stateVar}} onChange={(e) => ${setterVar}(Number(e.target.value))} className="w-24 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all" />`);
           L.push(`            <span className="text-sm text-zinc-400">${p.name}</span>`);
@@ -781,10 +803,17 @@ function generateStatePanel(
       L.push(`            {${dataVar} && ${dataVar}.length > 0 && (`);
       L.push(`              <div className="border-t border-zinc-800/50 pt-4 mt-4">`);
       L.push(`                <h3 className="text-sm text-zinc-400 mb-3">${qi.displayName} ({${dataVar}.length})</h3>`);
-      L.push(`                <div className="max-h-48 overflow-y-auto divide-y divide-zinc-800/30">`);
+      L.push(`                <div className="max-h-48 overflow-y-auto overflow-x-hidden divide-y divide-zinc-800/30">`);
       L.push(`                  {${dataVar}.map((item: any, i: number) => (`);
-      L.push(`                    <div key={i} className="py-2 text-sm text-zinc-400">`);
-      L.push(`                      {JSON.stringify(item)}`);
+      L.push(`                    <div key={i} className="py-2 text-sm text-zinc-400 min-w-0">`);
+      L.push(`                      {item?.sender ? (`);
+      L.push(`                        <div className="flex items-start gap-2 min-w-0">`);
+      L.push(`                          <CopyAddress address={String(item.sender)} />`);
+      L.push(`                          <span className="break-all">{String(item.text ?? "")}</span>`);
+      L.push(`                        </div>`);
+      L.push(`                      ) : (`);
+      L.push(`                        <span className="break-all">{JSON.stringify(item)}</span>`);
+      L.push(`                      )}`);
       L.push(`                    </div>`);
       L.push(`                  ))}`);
       L.push(`                </div>`);
