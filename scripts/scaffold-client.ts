@@ -245,7 +245,6 @@ function generateActionsPanel(
   const iconList = [...allIcons].sort().join(", ");
 
   // Imports
-  const txImports = commands.map((c) => txFnName(c.name));
   L.push(HEADER);
   L.push(`import { useState } from "react";`);
   L.push(`import { motion, AnimatePresence } from "framer-motion";`);
@@ -254,21 +253,22 @@ function generateActionsPanel(
   L.push(`} from "@phosphor-icons/react";`);
   L.push(`import { useChainApi, useWallet } from "@/providers/chain-provider";`);
   L.push(`import { initSails } from "@/lib/sails-client";`);
+  L.push(`import { useSendTransaction } from "@/hooks/use-send-transaction";`);
   L.push(``);
 
   // TxPhase type + TxStatus component (self-contained)
   L.push(`type TxPhase = "idle" | "signing" | "submitted" | "confirmed" | "error";`);
   L.push(``);
   L.push(`function TxStatus({`);
-  L.push(`  phase, error, onDismiss,`);
+  L.push(`  phase, error, signless, onDismiss,`);
   L.push(`}: {`);
-  L.push(`  phase: TxPhase; error: string | null; onDismiss?: () => void;`);
+  L.push(`  phase: TxPhase; error: string | null; signless?: boolean; onDismiss?: () => void;`);
   L.push(`}) {`);
   L.push(`  return (`);
   L.push(`    <AnimatePresence mode="wait">`);
   L.push(`      {phase !== "idle" && (`);
   L.push(`        <motion.div key={phase} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ type: "spring" as const, stiffness: 200, damping: 25 }} className={\`mt-2.5 \${phase === "error" ? "bg-red-500/5 border border-red-500/10 rounded-xl p-3" : "flex items-center gap-1.5"}\`}>`);
-  L.push(`          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" /><span className="text-sm text-amber-400">Waiting for signature</span></>)}`);
+  L.push(`          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" /><span className="text-sm text-amber-400">{signless ? "Auto-signing" : "Waiting for signature"}</span></>)}`);
   L.push(`          {phase === "submitted" && (<><CircleNotch size={14} className="animate-spin text-emerald-400" /><span className="text-sm text-emerald-400">Processing</span></>)}`);
   L.push(`          {phase === "confirmed" && (<><CheckCircle size={14} weight="fill" className="text-emerald-400" /><span className="text-sm text-emerald-400">Confirmed</span></>)}`);
   L.push(`          {phase === "error" && (<div className="flex items-start gap-2"><XCircle size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" /><span className="text-sm text-red-400 flex-1">{error}</span>{onDismiss && (<button onClick={onDismiss} className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0"><XCircle size={14} weight="bold" /></button>)}</div>)}`);
@@ -282,7 +282,8 @@ function generateActionsPanel(
   // Main component
   L.push(`export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {`);
   L.push(`  const { api, apiStatus } = useChainApi();`);
-  L.push(`  const { account, signer, walletStatus } = useWallet();`);
+  L.push(`  const { account, walletStatus } = useWallet();`);
+  L.push(`  const { sendTransaction, signless } = useSendTransaction();`);
   L.push(`  const disabled = !api || apiStatus !== "ready" || walletStatus !== "connected" || !account;`);
   L.push(``);
 
@@ -310,8 +311,6 @@ function generateActionsPanel(
     const paramVars = params.map(
       (p) => `${prefix}${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`
     );
-    const callArgs = ["api", "account.address", ...paramVars, "signer"].join(", ");
-
     L.push(`  async function handle${cmd.name}() {`);
     L.push(`    if (!api || !account) return;`);
 
@@ -339,11 +338,10 @@ function generateActionsPanel(
     L.push(`      const sails = await initSails(api);`);
     L.push(`      const service = sails?.services?.${serviceName} ?? sails?.services?.${serviceName.toLowerCase()};`);
     L.push(`      const tx = service.functions.${cmd.name}(${paramVars.join(", ")});`);
-    L.push(`      tx.withAccount(account.address, signer ? { signer } : undefined);`);
-    L.push(`      await tx.calculateGas();`);
-    L.push(`      set${cmd.name}Phase("submitted");`);
-    L.push(`      const result = await tx.signAndSend();`);
-    L.push(`      await result.response();`);
+    L.push(`      await sendTransaction(tx, {`);
+    L.push(`        onSigning: () => set${cmd.name}Phase("submitted"),`);
+    L.push(`        onSubmitted: () => {},`);
+    L.push(`      });`);
     L.push(`      set${cmd.name}Phase("confirmed");`);
     L.push(`      onTxSuccess();`);
     L.push(`      setTimeout(() => set${cmd.name}Phase("idle"), 3000);`);
@@ -431,7 +429,7 @@ function generateActionsPanel(
       L.push(`          </div>`);
     }
 
-    L.push(`          <TxStatus phase={${prefix}Phase} error={${prefix}Error} onDismiss={() => { set${cmd.name}Phase("idle"); set${cmd.name}Error(null); }} />`);
+    L.push(`          <TxStatus phase={${prefix}Phase} error={${prefix}Error} signless={signless} onDismiss={() => { set${cmd.name}Phase("idle"); set${cmd.name}Error(null); }} />`);
     L.push(`        </div>`);
   }
 

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useWallet } from "@/providers/chain-provider";
 import { useSails } from "@/hooks/use-sails";
+import { useSendTransaction } from "@/hooks/use-send-transaction";
 import {
   extractMethods,
   getTypeLabel,
@@ -18,7 +19,8 @@ const INTERNAL_METHODS = new Set(["HandlePing"]);
 
 export function ManualCallTab({ onTxSuccess }: { onTxSuccess?: () => void }) {
   const { sails, loading: sailsLoading, error: sailsError } = useSails();
-  const { account, signer, walletStatus } = useWallet();
+  const { account, walletStatus } = useWallet();
+  const { sendTransaction } = useSendTransaction();
 
   const methods = useMemo(() => {
     if (!sails) return [];
@@ -90,10 +92,7 @@ export function ManualCallTab({ onTxSuccess }: { onTxSuccess?: () => void }) {
 
         const cmdFn = service.functions[selected.methodName];
         const tx = cmdFn(...orderedArgs);
-        tx.withAccount(account.address, signer ? { signer } : undefined);
-        await tx.calculateGas();
-        const sentResult = await tx.signAndSend();
-        const response = await sentResult.response();
+        const response = await sendTransaction(tx);
         setResult(safeJsonStringify(response));
         setStatus("success");
         onTxSuccess?.();
