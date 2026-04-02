@@ -1,5 +1,6 @@
 import { NetworkSelector } from "@/components/NetworkSelector";
 import { WalletButton } from "@/components/WalletModal";
+import { VoucherBadge } from "@/components/VoucherBadge";
 
 export function Header() {
   return (
@@ -11,7 +12,10 @@ export function Header() {
         <NetworkSelector />
       </div>
 
-      <WalletButton />
+      <div className="flex items-center gap-3">
+        <VoucherBadge />
+        <WalletButton />
+      </div>
     </header>
   );
 }
