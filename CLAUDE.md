@@ -184,7 +184,7 @@ Use `vara-skills:vara-wallet` to deploy:
 ## Dependencies
 
 ### Rust (programs/demo)
-- `sails-rs` 1.0.0-beta.2 (Sails framework)
+- `sails-rs` 0.10.3 (Sails framework)
 - Rust stable toolchain with `wasm32-unknown-unknown` target
 
 ### Frontend
