@@ -30,7 +30,7 @@ function EventRow({ event }: { event: DemoEvent }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, height: 0 }}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="flex items-start gap-2 py-1.5 text-xs border-b border-zinc-800/30 last:border-0"
+      className="flex items-start gap-2 py-1.5 text-xs border-b border-zinc-800/30 last:border-0 min-w-0"
     >
       <span className="text-zinc-600 font-mono shrink-0">{formatTime(event.timestamp)}</span>
       <span className="text-emerald-400 font-medium shrink-0">{event.name}</span>

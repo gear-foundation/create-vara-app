@@ -44,7 +44,7 @@ export function App() {
             className="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6"
           >
             {/* Left column: read (wider) */}
-            <div className="space-y-6">
+            <div className="space-y-6 min-w-0">
               <motion.div variants={fadeUp}>
                 <StatePanel refreshTrigger={refreshTrigger} />
               </motion.div>
@@ -54,7 +54,7 @@ export function App() {
             </div>
 
             {/* Right column: write */}
-            <div className="space-y-6">
+            <div className="space-y-6 min-w-0">
               <motion.div variants={fadeUp}>
                 <ActionsPanel onTxSuccess={handleTxSuccess} />
               </motion.div>

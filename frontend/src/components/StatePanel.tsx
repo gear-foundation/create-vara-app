@@ -97,10 +97,17 @@ export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {
             {messagesData && messagesData.length > 0 && (
               <div className="border-t border-zinc-800/50 pt-4 mt-4">
                 <h3 className="text-sm text-zinc-400 mb-3">Messages ({messagesData.length})</h3>
-                <div className="max-h-48 overflow-y-auto divide-y divide-zinc-800/30">
+                <div className="max-h-48 overflow-y-auto overflow-x-hidden divide-y divide-zinc-800/30">
                   {messagesData.map((item: any, i: number) => (
-                    <div key={i} className="py-2 text-sm text-zinc-400">
-                      {JSON.stringify(item)}
+                    <div key={i} className="py-2 text-sm text-zinc-400 min-w-0">
+                      {item?.sender ? (
+                        <div className="flex items-start gap-2 min-w-0">
+                          <CopyAddress address={String(item.sender)} />
+                          <span className="break-all">{String(item.text ?? "")}</span>
+                        </div>
+                      ) : (
+                        <span className="break-all">{JSON.stringify(item)}</span>
+                      )}
                     </div>
                   ))}
                 </div>
