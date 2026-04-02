@@ -26,18 +26,6 @@ Work remaining to ship vara-ai-starter as a complete, production-quality starter
 
 ---
 
-### Codegen: typed return values for queries
-
-**What:** Query wrappers return `Promise<any>` because the Sails runtime returns dynamic objects. `queryState(api)` should return `Promise<StateView>`, `queryCounter(api)` should return `Promise<string>` (u64).
-
-**Why:** Agents and developers get typed inputs but untyped outputs. The biggest benefit of type codegen (autocomplete on query results) is still missing.
-
-**Fix:** Analyze Sails query return types in the IDL and generate return type annotations. Use the same `getTsType()` mapping already added for params.
-
-**Effort:** S (CC: ~15min)
-
----
-
 ### Codegen: snapshot tests
 
 **What:** The scaffold script has no automated tests. Changes to type mapping or icon heuristics are verified manually.
@@ -47,18 +35,6 @@ Work remaining to ship vara-ai-starter as a complete, production-quality starter
 **Fix:** Add a test file with 2-3 fixture IDLs (primitive-heavy, struct-heavy, enum with payloads) and snapshot the generated output.
 
 **Effort:** M (CC: ~30min)
-
----
-
-### Signing state immediately overwritten
-
-**What:** In generated ActionsPanel, `set*Phase("signing")` is immediately followed by `set*Phase("submitted")` without awaiting the actual signing step. The user never sees the "Waiting for signature" feedback.
-
-**Why:** Transaction lifecycle feedback is broken. Users think the tx is already submitted when the wallet hasn't even prompted yet.
-
-**Fix:** Split the sails-client tx wrappers to separate the sign and send steps, or await the signer prompt before updating phase.
-
-**Effort:** S (CC: ~15min)
 
 ---
 
@@ -153,6 +129,8 @@ npx create-vara-app my-dapp --idl path/to/service.idl
 
 ## Done (this session)
 
+- [x] Codegen: typed return values (Promise<string>, Promise<null>, etc. for queries and txs)
+- [x] Fix signing state: split calculateGas/signAndSend so users see signing -> submitted -> confirmed
 - [x] Codegen: proper TypeScript types for params (str->string, u32->number, u64->string, etc.)
 - [x] Codegen: smarter ActionsPanel icons (ChatText, Clock, PencilSimple, PlusCircle by method name)
 - [x] CLAUDE.md + README updated to reflect scaffold workflow

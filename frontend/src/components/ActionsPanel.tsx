@@ -8,13 +8,7 @@ import {
   CheckCircle, CircleNotch, Clock, PlusCircle, XCircle,
 } from "@phosphor-icons/react";
 import { useChainApi, useWallet } from "@/providers/chain-provider";
-import {
-  txHandlePing,
-  txIncrement,
-  txSchedulePing,
-  txSendMessage,
-  txSetGreeting,
-} from "@/lib/sails-client";
+import { initSails } from "@/lib/sails-client";
 
 type TxPhase = "idle" | "signing" | "submitted" | "confirmed" | "error";
 
@@ -70,8 +64,14 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setHandlePingPhase("signing");
     setHandlePingError(null);
     try {
+      const sails = await initSails(api);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.HandlePing();
+      tx.withAccount(account.address, signer ? { signer } : undefined);
+      await tx.calculateGas();
       setHandlePingPhase("submitted");
-      await txHandlePing(api, account.address, signer);
+      const result = await tx.signAndSend();
+      await result.response();
       setHandlePingPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setHandlePingPhase("idle"), 3000);
@@ -86,8 +86,14 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setIncrementPhase("signing");
     setIncrementError(null);
     try {
+      const sails = await initSails(api);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.Increment();
+      tx.withAccount(account.address, signer ? { signer } : undefined);
+      await tx.calculateGas();
       setIncrementPhase("submitted");
-      await txIncrement(api, account.address, signer);
+      const result = await tx.signAndSend();
+      await result.response();
       setIncrementPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setIncrementPhase("idle"), 3000);
@@ -102,8 +108,14 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setSchedulePingPhase("signing");
     setSchedulePingError(null);
     try {
+      const sails = await initSails(api);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.SchedulePing(schDelay);
+      tx.withAccount(account.address, signer ? { signer } : undefined);
+      await tx.calculateGas();
       setSchedulePingPhase("submitted");
-      await txSchedulePing(api, account.address, schDelay, signer);
+      const result = await tx.signAndSend();
+      await result.response();
       setSchedulePingPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setSchedulePingPhase("idle"), 3000);
@@ -118,8 +130,14 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setSendMessagePhase("signing");
     setSendMessageError(null);
     try {
+      const sails = await initSails(api);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.SendMessage(senText);
+      tx.withAccount(account.address, signer ? { signer } : undefined);
+      await tx.calculateGas();
       setSendMessagePhase("submitted");
-      await txSendMessage(api, account.address, senText, signer);
+      const result = await tx.signAndSend();
+      await result.response();
       setSendMessagePhase("confirmed");
       onTxSuccess();
       setTimeout(() => setSendMessagePhase("idle"), 3000);
@@ -134,8 +152,14 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setSetGreetingPhase("signing");
     setSetGreetingError(null);
     try {
+      const sails = await initSails(api);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.SetGreeting(setGreeting);
+      tx.withAccount(account.address, signer ? { signer } : undefined);
+      await tx.calculateGas();
       setSetGreetingPhase("submitted");
-      await txSetGreeting(api, account.address, setGreeting, signer);
+      const result = await tx.signAndSend();
+      await result.response();
       setSetGreetingPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setSetGreetingPhase("idle"), 3000);

@@ -239,9 +239,10 @@ function generateSailsClient(
     const paramArgs = params.map((p) => `${p.name}: ${p.tsType}`).join(", ");
     const paramCall = params.map((p) => p.name).join(", ");
     const hasParams = params.length > 0;
+    const returnType = getTsType(q.def);
 
     lines.push(
-      `export async function ${fnName}(api: GearApi${hasParams ? `, ${paramArgs}` : ""}) {`,
+      `export async function ${fnName}(api: GearApi${hasParams ? `, ${paramArgs}` : ""}): Promise<${returnType}> {`,
       `  const sails = await initSails(api);`,
       `  const service = getService(sails);`,
       `  return service.queries.${q.name}(${paramCall}).call();`,
@@ -259,6 +260,7 @@ function generateSailsClient(
       .map((p) => `  ${p.name}: ${p.tsType},`)
       .join("\n");
     const paramCall = params.map((p) => p.name).join(", ");
+    const returnType = getTsType(cmd.def);
 
     lines.push(
       `export async function ${fnName}(`,
@@ -270,7 +272,7 @@ function generateSailsClient(
     }
     lines.push(
       `  signer?: unknown`,
-      `) {`,
+      `): Promise<${returnType}> {`,
       `  const sails = await initSails(api);`,
       `  const service = getService(sails);`,
       `  const tx = service.functions.${cmd.name}(${paramCall});`,
@@ -367,6 +369,7 @@ function methodIcon(name: string): string {
 // --- Generate ActionsPanel.tsx ---
 
 function generateActionsPanel(
+  serviceName: string,
   commands: any[],
   idlRelPath: string,
 ): string {
@@ -389,11 +392,7 @@ function generateActionsPanel(
   L.push(`  ${iconList},`);
   L.push(`} from "@phosphor-icons/react";`);
   L.push(`import { useChainApi, useWallet } from "@/providers/chain-provider";`);
-  L.push(`import {`);
-  for (const name of txImports) {
-    L.push(`  ${name},`);
-  }
-  L.push(`} from "@/lib/sails-client";`);
+  L.push(`import { initSails } from "@/lib/sails-client";`);
   L.push(``);
 
   // TxPhase type + TxStatus component (self-contained)
@@ -457,8 +456,14 @@ function generateActionsPanel(
     L.push(`    set${cmd.name}Phase("signing");`);
     L.push(`    set${cmd.name}Error(null);`);
     L.push(`    try {`);
+    L.push(`      const sails = await initSails(api);`);
+    L.push(`      const service = sails?.services?.${serviceName} ?? sails?.services?.${serviceName.toLowerCase()};`);
+    L.push(`      const tx = service.functions.${cmd.name}(${paramVars.join(", ")});`);
+    L.push(`      tx.withAccount(account.address, signer ? { signer } : undefined);`);
+    L.push(`      await tx.calculateGas();`);
     L.push(`      set${cmd.name}Phase("submitted");`);
-    L.push(`      await ${fnName}(${callArgs});`);
+    L.push(`      const result = await tx.signAndSend();`);
+    L.push(`      await result.response();`);
     L.push(`      set${cmd.name}Phase("confirmed");`);
     L.push(`      onTxSuccess();`);
     L.push(`      setTimeout(() => set${cmd.name}Phase("idle"), 3000);`);
@@ -854,7 +859,7 @@ async function main() {
   console.log(`Generated: ${clientPath}`);
 
   // 2. Generate ActionsPanel.tsx
-  const actionsOutput = generateActionsPanel(commands, idlRelPath);
+  const actionsOutput = generateActionsPanel(serviceName, commands, idlRelPath);
   const actionsPath = resolve(FRONTEND_DIR, "src/components/ActionsPanel.tsx");
   writeFileSync(actionsPath, actionsOutput);
   console.log(`Generated: ${actionsPath}`);

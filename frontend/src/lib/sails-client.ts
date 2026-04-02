@@ -50,25 +50,25 @@ function getService(sails: any): any {
 
 // -- Queries --
 
-export async function queryCounter(api: GearApi) {
+export async function queryCounter(api: GearApi): Promise<string> {
   const sails = await initSails(api);
   const service = getService(sails);
   return service.queries.GetCounter().call();
 }
 
-export async function queryGreeting(api: GearApi) {
+export async function queryGreeting(api: GearApi): Promise<string> {
   const sails = await initSails(api);
   const service = getService(sails);
   return service.queries.GetGreeting().call();
 }
 
-export async function queryMessages(api: GearApi) {
+export async function queryMessages(api: GearApi): Promise<unknown[]> {
   const sails = await initSails(api);
   const service = getService(sails);
   return service.queries.GetMessages().call();
 }
 
-export async function queryState(api: GearApi) {
+export async function queryState(api: GearApi): Promise<unknown> {
   const sails = await initSails(api);
   const service = getService(sails);
   return service.queries.GetState().call();
@@ -80,7 +80,7 @@ export async function txHandlePing(
   api: GearApi,
   account: string,
   signer?: unknown
-) {
+): Promise<null> {
   const sails = await initSails(api);
   const service = getService(sails);
   const tx = service.functions.HandlePing();
@@ -95,7 +95,7 @@ export async function txIncrement(
   api: GearApi,
   account: string,
   signer?: unknown
-) {
+): Promise<string> {
   const sails = await initSails(api);
   const service = getService(sails);
   const tx = service.functions.Increment();
@@ -111,7 +111,7 @@ export async function txSchedulePing(
   account: string,
   delay: number,
   signer?: unknown
-) {
+): Promise<null> {
   const sails = await initSails(api);
   const service = getService(sails);
   const tx = service.functions.SchedulePing(delay);
@@ -127,7 +127,7 @@ export async function txSendMessage(
   account: string,
   text: string,
   signer?: unknown
-) {
+): Promise<string> {
   const sails = await initSails(api);
   const service = getService(sails);
   const tx = service.functions.SendMessage(text);
@@ -143,7 +143,7 @@ export async function txSetGreeting(
   account: string,
   greeting: string,
   signer?: unknown
-) {
+): Promise<string> {
   const sails = await initSails(api);
   const service = getService(sails);
   const tx = service.functions.SetGreeting(greeting);
