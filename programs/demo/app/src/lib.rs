@@ -19,6 +19,7 @@ pub struct DemoState {
     pub messages: Vec<StoredMessage>,
     pub last_caller: Option<ActorId>,
     pub ping_count: u64,
+    pub greeting: String,
 }
 
 static mut STATE: Option<DemoState> = None;
@@ -58,6 +59,7 @@ pub struct StateView {
     pub last_caller: Option<ActorId>,
     pub ping_count: u64,
     pub message_count: u32,
+    pub greeting: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +84,10 @@ pub enum DemoEvents {
     },
     PingReceived {
         ping_count: u64,
+    },
+    GreetingSet {
+        greeting: String,
+        caller: ActorId,
     },
 }
 
@@ -185,6 +191,24 @@ impl DemoService {
         .expect("Failed to emit event");
     }
 
+    /// Set the program greeting. Anyone can change it.
+    #[export]
+    pub fn set_greeting(&mut self, greeting: String) -> String {
+        if greeting.is_empty() {
+            panic!("Greeting cannot be empty");
+        }
+        if greeting.len() > 128 {
+            panic!("Greeting exceeds 128 character limit");
+        }
+        let s = state_mut();
+        s.greeting = greeting.clone();
+        let caller = msg::source();
+        s.last_caller = Some(caller);
+        self.emit_event(DemoEvents::GreetingSet { greeting: greeting.clone(), caller })
+            .expect("Failed to emit event");
+        greeting
+    }
+
     // -- Queries --
 
     /// Get a summary of the current state.
@@ -196,6 +220,7 @@ impl DemoService {
             last_caller: s.last_caller,
             ping_count: s.ping_count,
             message_count: s.messages.len() as u32,
+            greeting: s.greeting.clone(),
         }
     }
 
@@ -209,6 +234,12 @@ impl DemoService {
     #[export]
     pub fn get_messages(&self) -> Vec<StoredMessage> {
         state().messages.clone()
+    }
+
+    /// Get the current greeting.
+    #[export]
+    pub fn get_greeting(&self) -> String {
+        state().greeting.clone()
     }
 }
 

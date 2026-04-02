@@ -1,6 +1,9 @@
+import { encodeAddress, decodeAddress } from "@polkadot/util-crypto";
+
 const APP_NAME = "Vara Starter";
 const POLL_INTERVAL_MS = 200;
 const POLL_MAX_ATTEMPTS = 15; // 3 seconds total
+const VARA_SS58_PREFIX = 137;
 
 type InjectedAccount = {
   address: string;
@@ -43,12 +46,21 @@ function injectedRegistry(): Record<string, InjectedWindowProvider> {
   return window.injectedWeb3 ?? {};
 }
 
+/** Re-encode address to Vara SS58 prefix (137) */
+function toVaraAddress(address: string): string {
+  try {
+    return encodeAddress(decodeAddress(address), VARA_SS58_PREFIX);
+  } catch {
+    return address;
+  }
+}
+
 function normalizeAccount(
   source: string,
   account: InjectedAccount
 ): WalletAccount {
   return {
-    address: account.address,
+    address: toVaraAddress(account.address),
     meta: {
       genesisHash: account.genesisHash ?? null,
       name: account.name,
@@ -57,6 +69,8 @@ function normalizeAccount(
     type: account.type,
   };
 }
+
+export { toVaraAddress };
 
 /** List all available wallet extensions. Polls for async injection. */
 export async function listWallets(): Promise<string[]> {
