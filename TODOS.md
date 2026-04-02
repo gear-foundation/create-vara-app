@@ -26,42 +26,7 @@ Work remaining to ship vara-ai-starter as a complete, production-quality starter
 
 ---
 
-### Client-side input validation
-
-**What:** The Rust contract rejects empty messages, overlong messages (>256 chars), zero delay, and empty greetings. The generated UI lets users submit these, resulting in on-chain errors with cryptic messages.
-
-**Why:** Deterministic failures are a first-class path in the starter. Bad UX for new developers testing the template.
-
-**Fix:** Generate validation rules from IDL metadata or hardcode basic checks (non-empty required fields, min/max for numeric fields, BigInt format validation for u64+).
-
-**Effort:** M (CC: ~30min)
-
----
-
 ## P2 — Nice to have
-
-### `create-vara-app` CLI
-
-**What:** A standalone CLI that scaffolds a complete Vara dApp from any IDL file.
-
-```bash
-npx create-vara-app my-dapp --idl path/to/service.idl
-```
-
-**Why:** The scaffold-client.ts + shared components already make this possible. The CLI just packages the template files + scaffold step into a single command.
-
-**What it does:**
-1. Copy template files (package.json, vite.config, tailwind, tsconfig)
-2. Copy shared components (Header, NetworkSelector, WalletModal, CopyAddress, DebugPanel, ManualCallTab, TypedInput, EventLog)
-3. Copy providers (chain-provider, events-provider)
-4. Copy lib (idl-introspect, wallet)
-5. Copy IDL to assets
-6. Run scaffold-client.ts -> generates sails-client.ts + ActionsPanel + StatePanel
-7. `npm install && npm run dev`
-
-**Effort:** L (CC: ~1hr)
-
----
 
 ### Codegen: generated gtest for new commands
 
@@ -70,18 +35,6 @@ npx create-vara-app my-dapp --idl path/to/service.idl
 **Why:** Every new contract needs tests. The pattern is mechanical and the IDL has all the info.
 
 **Effort:** M (CC: ~30min)
-
----
-
-### ManualCallTab: resolve UserDefined types
-
-**What:** TypedInput falls back to JSON textarea for UserDefined types because it doesn't have access to the Sails type registry. Pass `sails.getTypeDef(name)` as the resolver.
-
-**Why:** Struct arguments (like sending a full `StoredMessage`) require raw JSON input instead of getting nice field-by-field inputs.
-
-**Fix:** Thread `sails.getTypeDef` through as the `resolveType` prop in TypedInput.
-
-**Effort:** S (CC: ~10min)
 
 ---
 
@@ -117,6 +70,10 @@ npx create-vara-app my-dapp --idl path/to/service.idl
 
 ## Done (this session)
 
+- [x] create-vara-app CLI: npx create-vara-app my-dapp --idl service.idl
+- [x] Client-side input validation: empty-string and min-1 checks in codegen
+- [x] ManualCallTab: resolve UserDefined types via sails.getTypeByName
+- [x] Rename DemoEvent to ContractEvent for generic reuse
 - [x] Event subscriptions: wired EventsProvider + EventLog using sails-js 0.5.1 subscribe API
 - [x] Codegen: typed return values (Promise<string>, Promise<null>, etc. for queries and txs)
 - [x] Fix signing state: split calculateGas/signAndSend so users see signing -> submitted -> confirmed

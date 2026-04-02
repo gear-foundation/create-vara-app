@@ -1,0 +1,19 @@
+{
+  "name": "create-vara-app",
+  "version": "0.1.0",
+  "description": "Bootstrap a typed Vara Network dApp frontend from any Sails IDL",
+  "type": "module",
+  "bin": {
+    "create-vara-app": "index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "template/**"
+  ],
+  "keywords": ["vara", "gear", "sails", "blockchain", "dapp", "scaffold", "create-app"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/vara-ai-starter"
+  }
+}
