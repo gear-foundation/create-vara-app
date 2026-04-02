@@ -4,6 +4,8 @@ A full-stack Vara Network dapp starter template designed for AI agents.
 
 Includes a Sails program (Rust) demonstrating state management, events, delayed messages, and input validation, plus a React frontend with wallet connection, state reading, and transaction signing.
 
+![Vara AI Starter](docs/screenshot.png)
+
 ## Prerequisites
 
 - Rust stable (1.91+) with `wasm32-unknown-unknown` target
