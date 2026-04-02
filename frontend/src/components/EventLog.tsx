@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { Lightning, Trash } from "@phosphor-icons/react";
-import { useEvents, type DemoEvent } from "@/providers/events-provider";
+import { useEvents, type ContractEvent } from "@/providers/events-provider";
 
 function formatValue(val: unknown): string {
   if (typeof val === "string") {
@@ -19,7 +19,7 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function EventRow({ event }: { event: DemoEvent }) {
+function EventRow({ event }: { event: ContractEvent }) {
   const fields = Object.entries(event.data)
     .map(([k, v]) => `${k}: ${formatValue(v)}`)
     .join(", ");

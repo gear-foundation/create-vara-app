@@ -11,7 +11,7 @@ import { useChainApi } from "@/providers/chain-provider";
 
 let eventId = 0;
 
-export type DemoEvent = {
+export type ContractEvent = {
   id: number;
   name: string;
   data: Record<string, unknown>;
@@ -19,7 +19,7 @@ export type DemoEvent = {
 };
 
 type EventsState = {
-  events: DemoEvent[];
+  events: ContractEvent[];
   status: "idle" | "subscribing" | "listening" | "error";
   clearEvents: () => void;
 };
@@ -33,7 +33,7 @@ const EventsContext = createContext<EventsState>({
 const MAX_EVENTS = 50;
 
 export function EventsProvider({ children }: { children: ReactNode }) {
-  const [events, setEvents] = useState<DemoEvent[]>([]);
+  const [events, setEvents] = useState<ContractEvent[]>([]);
   const [status, setStatus] = useState<EventsState["status"]>("idle");
   const { sails, loading } = useSails();
   const { programId } = useChainApi();
