@@ -12,18 +12,6 @@ Work remaining to ship vara-ai-starter as a complete, production-quality starter
 
 ## P1 — High value, near-term
 
-### Event subscriptions when sails-js supports v1 IDL events
-
-**What:** The v1 stable IDL now includes an `events {}` block. sails-js 0.5.1 may already support event subscriptions via `sails.services.Demo.events`. The EventsProvider is a placeholder (`status: "idle"`), and EventLog is a compact banner.
-
-**Why:** Events are the #1 missing feature. Users send transactions but never see confirmation events. The event log is permanently empty.
-
-**Fix:** Test if `sails.services.Demo.events` works with current deps. If yes, wire up EventsProvider to subscribe and EventLog to display. If not, wait for sails-js update.
-
-**Depends on:** Testing sails-js 0.5.1 event subscription API.
-
-**Effort:** M (CC: ~30min)
-
 ---
 
 ### Codegen: snapshot tests
@@ -129,6 +117,7 @@ npx create-vara-app my-dapp --idl path/to/service.idl
 
 ## Done (this session)
 
+- [x] Event subscriptions: wired EventsProvider + EventLog using sails-js 0.5.1 subscribe API
 - [x] Codegen: typed return values (Promise<string>, Promise<null>, etc. for queries and txs)
 - [x] Fix signing state: split calculateGas/signAndSend so users see signing -> submitted -> confirmed
 - [x] Codegen: proper TypeScript types for params (str->string, u32->number, u64->string, etc.)
