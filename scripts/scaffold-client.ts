@@ -56,12 +56,55 @@ function getParams(func: any): ParamInfo[] {
   }));
 }
 
+// --- Type collection ---
+
+function collectUserDefinedTypes(def: any, names: Set<string>): void {
+  if (!def) return;
+  if (def.isUserDefined) {
+    names.add(def.asUserDefined.name);
+  } else if (def.isVec) {
+    collectUserDefinedTypes(def.asVec.def, names);
+  } else if (def.isOptional) {
+    collectUserDefinedTypes(def.asOptional.def, names);
+  } else if (def.isStruct) {
+    for (const f of def.asStruct.fields) {
+      collectUserDefinedTypes(f.def, names);
+    }
+  } else if (def.isResult) {
+    collectUserDefinedTypes(def.asResult.ok.def, names);
+    collectUserDefinedTypes(def.asResult.err.def, names);
+  } else if (def.isMap) {
+    collectUserDefinedTypes(def.asMap.key.def, names);
+    collectUserDefinedTypes(def.asMap.value.def, names);
+  } else if (def.isFixedSizeArray) {
+    collectUserDefinedTypes(def.asFixedSizeArray.def, names);
+  }
+}
+
 // --- Code generation ---
+
+function generateTypeInterfaces(program: any): string[] {
+  const lines: string[] = [];
+  const types = program.types ?? [];
+  for (const type of types) {
+    const def = type.def;
+    if (def?.isStruct) {
+      lines.push(`export interface ${type.name} {`);
+      for (const field of def.asStruct.fields) {
+        lines.push(`  ${field.name}: ${getTsType(field.def)};`);
+      }
+      lines.push(`}`);
+      lines.push(``);
+    }
+  }
+  return lines;
+}
 
 function generateSailsClient(
   serviceName: string,
   queries: any[],
   commands: any[],
+  program: any,
   idlRelPath: string
 ): string {
   const lines: string[] = [];
@@ -74,16 +117,25 @@ function generateSailsClient(
     `// Custom helpers should go in a separate file (e.g., sails-helpers.ts)`,
     ``,
     `import type { GearApi } from "@gear-js/api";`,
+    `import type { Sails } from "sails-js";`,
+    `import type { SignerOptions } from "@polkadot/api/types";`,
     `import idlRaw from "@/assets/demo.idl?raw";`,
     ``,
   );
 
-  // initSails boilerplate
+  // Type interfaces from IDL
+  const typeLines = generateTypeInterfaces(program);
+  if (typeLines.length > 0) {
+    lines.push(`// -- Types from IDL --`, ``);
+    lines.push(...typeLines);
+  }
+
+  // initSails boilerplate — caches on API, sets programId before returning
   lines.push(
-    `let cachedSails: Promise<unknown> | null = null;`,
+    `let cachedSails: Promise<Sails> | null = null;`,
     `let cachedApi: GearApi | null = null;`,
     ``,
-    `export async function initSails(api: GearApi) {`,
+    `export async function initSails(api: GearApi, programId?: string): Promise<Sails> {`,
     `  // Invalidate cache if api instance changed (fixes stale connection after reconnect)`,
     `  if (cachedSails && cachedApi !== api) {`,
     `    cachedSails = null;`,
@@ -99,12 +151,6 @@ function generateSailsClient(
     `      const sails = new Sails(parser);`,
     `      sails.setApi(api);`,
     `      sails.parseIdl(idlRaw);`,
-    ``,
-    `      const programId = import.meta.env.VITE_PROGRAM_ID;`,
-    `      if (programId) {`,
-    `        sails.setProgramId(programId as \`0x\${string}\`);`,
-    `      }`,
-    ``,
     `      return sails;`,
     `    })().catch((err) => {`,
     `      cachedSails = null;`,
@@ -112,18 +158,19 @@ function generateSailsClient(
     `      throw err;`,
     `    });`,
     `  }`,
-    ``,
-    `  // eslint-disable-next-line @typescript-eslint/no-explicit-any`,
-    `  return cachedSails as Promise<any>;`,
+    `  const sails = await cachedSails;`,
+    `  if (programId) {`,
+    `    sails.setProgramId(programId as \`0x\${string}\`);`,
+    `  }`,
+    `  return sails;`,
     `}`,
     ``,
   );
 
   // getService helper with actual service name
   lines.push(
-    `// eslint-disable-next-line @typescript-eslint/no-explicit-any`,
-    `function getService(sails: any): any {`,
-    `  return sails?.services?.${serviceName} ?? sails?.services?.${serviceName.toLowerCase()};`,
+    `function getService(sails: Sails) {`,
+    `  return sails.services.${serviceName} ?? sails.services.${serviceName.toLowerCase()};`,
     `}`,
     ``,
   );
@@ -139,8 +186,8 @@ function generateSailsClient(
     const returnType = getTsType(q.def);
 
     lines.push(
-      `export async function ${fnName}(api: GearApi${hasParams ? `, ${paramArgs}` : ""}): Promise<${returnType}> {`,
-      `  const sails = await initSails(api);`,
+      `export async function ${fnName}(api: GearApi${hasParams ? `, ${paramArgs}` : ""}, programId?: string): Promise<${returnType}> {`,
+      `  const sails = await initSails(api, programId);`,
       `  const service = getService(sails);`,
       `  return service.queries.${q.name}(${paramCall}).call();`,
       `}`,
@@ -162,21 +209,24 @@ function generateSailsClient(
     lines.push(
       `export async function ${fnName}(`,
       `  api: GearApi,`,
+      `  programId: string,`,
       `  account: string,`,
     );
     if (params.length > 0) {
       lines.push(extraArgs);
     }
     lines.push(
-      `  signer?: unknown`,
+      `  signer?: unknown,`,
+      `  options?: { onSubmitted?: () => void },`,
       `): Promise<${returnType}> {`,
-      `  const sails = await initSails(api);`,
+      `  const sails = await initSails(api, programId);`,
       `  const service = getService(sails);`,
       `  const tx = service.functions.${cmd.name}(${paramCall});`,
       `  const result = await tx`,
-      `    .withAccount(account, signer ? { signer } : undefined)`,
+      `    .withAccount(account, signer ? { signer } as Partial<SignerOptions> : undefined)`,
       `    .calculateGas()`,
       `    .then(() => tx.signAndSend());`,
+      `  options?.onSubmitted?.();`,
       `  return result.response();`,
       `}`,
       ``,
@@ -253,7 +303,11 @@ function generateActionsPanel(
   L.push(`  ${iconList},`);
   L.push(`} from "@phosphor-icons/react";`);
   L.push(`import { useChainApi, useWallet } from "@/providers/chain-provider";`);
-  L.push(`import { initSails } from "@/lib/sails-client";`);
+  L.push(`import {`);
+  for (const name of txImports) {
+    L.push(`  ${name},`);
+  }
+  L.push(`} from "@/lib/sails-client";`);
   L.push(``);
 
   // TxPhase type + TxStatus component (self-contained)
@@ -281,7 +335,7 @@ function generateActionsPanel(
 
   // Main component
   L.push(`export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {`);
-  L.push(`  const { api, apiStatus } = useChainApi();`);
+  L.push(`  const { api, apiStatus, programId } = useChainApi();`);
   L.push(`  const { account, signer, walletStatus } = useWallet();`);
   L.push(`  const disabled = !api || apiStatus !== "ready" || walletStatus !== "connected" || !account;`);
   L.push(``);
@@ -310,7 +364,7 @@ function generateActionsPanel(
     const paramVars = params.map(
       (p) => `${prefix}${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`
     );
-    const callArgs = ["api", "account.address", ...paramVars, "signer"].join(", ");
+    const callArgs = ["api", "programId", "account.address", ...paramVars, "signer"].join(", ");
 
     L.push(`  async function handle${cmd.name}() {`);
     L.push(`    if (!api || !account) return;`);
@@ -336,14 +390,9 @@ function generateActionsPanel(
     L.push(`    set${cmd.name}Phase("signing");`);
     L.push(`    set${cmd.name}Error(null);`);
     L.push(`    try {`);
-    L.push(`      const sails = await initSails(api);`);
-    L.push(`      const service = sails?.services?.${serviceName} ?? sails?.services?.${serviceName.toLowerCase()};`);
-    L.push(`      const tx = service.functions.${cmd.name}(${paramVars.join(", ")});`);
-    L.push(`      tx.withAccount(account.address, signer ? { signer } : undefined);`);
-    L.push(`      await tx.calculateGas();`);
-    L.push(`      set${cmd.name}Phase("submitted");`);
-    L.push(`      const result = await tx.signAndSend();`);
-    L.push(`      await result.response();`);
+    L.push(`      await ${fnName}(${callArgs}, {`);
+    L.push(`        onSubmitted: () => set${cmd.name}Phase("submitted"),`);
+    L.push(`      });`);
     L.push(`      set${cmd.name}Phase("confirmed");`);
     L.push(`      onTxSuccess();`);
     L.push(`      setTimeout(() => set${cmd.name}Phase("idle"), 3000);`);
@@ -505,8 +554,12 @@ function generateStatePanel(
     };
   });
 
-  // Build query imports
+  // Build query imports and collect type names used in return types
   const queryImports = queryInfos.map((qi) => qi.fnName);
+  const usedTypeNames = new Set<string>();
+  for (const qi of queryInfos) {
+    collectUserDefinedTypes(qi.func.def, usedTypeNames);
+  }
 
   L.push(HEADER);
   L.push(`import { useState, useEffect, useCallback } from "react";`);
@@ -517,6 +570,9 @@ function generateStatePanel(
   L.push(`import {`);
   for (const name of queryImports) {
     L.push(`  ${name},`);
+  }
+  for (const typeName of usedTypeNames) {
+    L.push(`  type ${typeName},`);
   }
   L.push(`} from "@/lib/sails-client";`);
   L.push(``);
@@ -543,13 +599,14 @@ function generateStatePanel(
 
   // Main component
   L.push(`export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {`);
-  L.push(`  const { api, apiStatus } = useChainApi();`);
+  L.push(`  const { api, apiStatus, programId } = useChainApi();`);
   L.push(`  const { account } = useWallet();`);
 
-  // State for each query result
+  // State for each query result — typed from IDL
   for (const qi of queryInfos) {
-    L.push(`  // eslint-disable-next-line @typescript-eslint/no-explicit-any`);
-    L.push(`  const [${qi.displayName.charAt(0).toLowerCase() + qi.displayName.slice(1)}Data, set${qi.displayName}Data] = useState<any>(null);`);
+    const returnType = getTsType(qi.func.def);
+    const stateVar = qi.displayName.charAt(0).toLowerCase() + qi.displayName.slice(1);
+    L.push(`  const [${stateVar}Data, set${qi.displayName}Data] = useState<${returnType} | null>(null);`);
   }
 
   L.push(`  const [loading, setLoading] = useState(true);`);
@@ -563,7 +620,7 @@ function generateStatePanel(
   L.push(`    try {`);
   L.push(`      const [${queryInfos.map((qi) => `r_${qi.displayName.toLowerCase()}`).join(", ")}] = await Promise.all([`);
   for (const qi of queryInfos) {
-    L.push(`        ${qi.fnName}(api),`);
+    L.push(`        ${qi.fnName}(api, programId),`);
   }
   L.push(`      ]);`);
   for (const qi of queryInfos) {
@@ -578,7 +635,7 @@ function generateStatePanel(
   L.push(`      setLoading(false);`);
   L.push(`      setPollInterval((prev) => Math.min(prev * 2, 60000));`);
   L.push(`    }`);
-  L.push(`  }, [api, apiStatus]);`);
+  L.push(`  }, [api, apiStatus, programId]);`);
   L.push(``);
 
   // Effects
@@ -660,21 +717,41 @@ function generateStatePanel(
         }
       }
     } else if (qi.isVec && qi.vecFields) {
-      // Vec of structs: render as a list
+      // Vec of structs: render each item using field metadata
+      const vecTypeName = qi.func.def?.asVec?.def?.isUserDefined
+        ? qi.func.def.asVec.def.asUserDefined.name
+        : "any";
       L.push(`            {${dataVar} && ${dataVar}.length > 0 && (`);
       L.push(`              <div className="border-t border-zinc-800/50 pt-4 mt-4">`);
       L.push(`                <h3 className="text-sm text-zinc-400 mb-3">${qi.displayName} ({${dataVar}.length})</h3>`);
       L.push(`                <div className="max-h-48 overflow-y-auto overflow-x-hidden divide-y divide-zinc-800/30">`);
-      L.push(`                  {${dataVar}.map((item: any, i: number) => (`);
+      L.push(`                  {${dataVar}.map((item: ${vecTypeName}, i: number) => (`);
       L.push(`                    <div key={i} className="py-2 text-sm text-zinc-400 min-w-0">`);
-      L.push(`                      {item?.sender ? (`);
-      L.push(`                        <div className="flex items-start gap-2 min-w-0">`);
-      L.push(`                          <CopyAddress address={String(item.sender)} />`);
-      L.push(`                          <span className="break-all">{String(item.text ?? "")}</span>`);
-      L.push(`                        </div>`);
-      L.push(`                      ) : (`);
-      L.push(`                        <span className="break-all">{JSON.stringify(item)}</span>`);
-      L.push(`                      )}`);
+
+      // Render each field based on type
+      const addressFields: string[] = [];
+      const textFields: string[] = [];
+      for (const field of qi.vecFields) {
+        const ftl = getTypeLabel(field.def);
+        if (ftl === "actor_id" || ftl === "opt actor_id") {
+          addressFields.push(field.name);
+        } else {
+          textFields.push(field.name);
+        }
+      }
+      if (addressFields.length > 0 || textFields.length > 0) {
+        L.push(`                      <div className="flex items-start gap-2 min-w-0">`);
+        for (const af of addressFields) {
+          L.push(`                        {item.${af} && <CopyAddress address={String(item.${af})} />}`);
+        }
+        for (const tf of textFields) {
+          L.push(`                        <span className="break-all">{String(item.${tf} ?? "")}</span>`);
+        }
+        L.push(`                      </div>`);
+      } else {
+        L.push(`                      <span className="break-all">{JSON.stringify(item)}</span>`);
+      }
+
       L.push(`                    </div>`);
       L.push(`                  ))}`);
       L.push(`                </div>`);
@@ -743,7 +820,7 @@ async function main() {
   const idlRelPath = "src/assets/demo.idl";
 
   // 1. Generate sails-client.ts
-  const clientOutput = generateSailsClient(serviceName, queries, commands, idlRelPath);
+  const clientOutput = generateSailsClient(serviceName, queries, commands, program, idlRelPath);
   const clientPath = resolve(FRONTEND_DIR, "src/lib/sails-client.ts");
   writeFileSync(clientPath, clientOutput);
   console.log(`Generated: ${clientPath}`);
