@@ -10,6 +10,8 @@ import { useChainApi, useWallet } from "@/providers/chain-provider";
 import {
   queryMessages,
   queryState,
+  type StoredMessage,
+  type StateView,
 } from "@/lib/sails-client";
 
 function MetricRow({ value, label, accentColor = "border-emerald-500/40" }: { value: string | number; label: string; accentColor?: string }) {
@@ -31,12 +33,10 @@ function SkeletonMetric() {
 }
 
 export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {
-  const { api, apiStatus } = useChainApi();
+  const { api, apiStatus, programId } = useChainApi();
   const { account } = useWallet();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [messagesData, setMessagesData] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [stateData, setStateData] = useState<any>(null);
+  const [messagesData, setMessagesData] = useState<StoredMessage[] | null>(null);
+  const [stateData, setStateData] = useState<StateView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pollInterval, setPollInterval] = useState(5000);
@@ -45,8 +45,8 @@ export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {
     if (!api || apiStatus !== "ready") return;
     try {
       const [r_messages, r_state] = await Promise.all([
-        queryMessages(api),
-        queryState(api),
+        queryMessages(api, programId),
+        queryState(api, programId),
       ]);
       setMessagesData(r_messages);
       setStateData(r_state);
@@ -58,7 +58,7 @@ export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {
       setLoading(false);
       setPollInterval((prev) => Math.min(prev * 2, 60000));
     }
-  }, [api, apiStatus]);
+  }, [api, apiStatus, programId]);
 
   useEffect(() => { fetchState(); }, [fetchState, refreshTrigger]);
 
@@ -98,16 +98,13 @@ export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {
               <div className="border-t border-zinc-800/50 pt-4 mt-4">
                 <h3 className="text-sm text-zinc-400 mb-3">Messages ({messagesData.length})</h3>
                 <div className="max-h-48 overflow-y-auto overflow-x-hidden divide-y divide-zinc-800/30">
-                  {messagesData.map((item: any, i: number) => (
+                  {messagesData.map((item: StoredMessage, i: number) => (
                     <div key={i} className="py-2 text-sm text-zinc-400 min-w-0">
-                      {item?.sender ? (
-                        <div className="flex items-start gap-2 min-w-0">
-                          <CopyAddress address={String(item.sender)} />
-                          <span className="break-all">{String(item.text ?? "")}</span>
-                        </div>
-                      ) : (
-                        <span className="break-all">{JSON.stringify(item)}</span>
-                      )}
+                      <div className="flex items-start gap-2 min-w-0">
+                        {item.sender && <CopyAddress address={String(item.sender)} />}
+                        <span className="break-all">{String(item.text ?? "")}</span>
+                        <span className="break-all">{String(item.block_height ?? "")}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
