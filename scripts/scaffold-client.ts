@@ -78,6 +78,54 @@ function getTypeLabel(def: any): string {
   return "unknown";
 }
 
+// --- TypeScript type mapping ---
+
+function primToTs(prim: any): string {
+  if (prim.isStr || prim.isChar) return "string";
+  if (prim.isBool) return "boolean";
+  if (prim.isNull) return "null";
+  // Small integers
+  if (prim.isU8 || prim.isU16 || prim.isU32 || prim.isI8 || prim.isI16 || prim.isI32) return "number";
+  if (prim.isNonZeroU8 || prim.isNonZeroU16 || prim.isNonZeroU32) return "number";
+  // Big integers -> string (BigInt at runtime, avoids precision loss)
+  if (prim.isU64 || prim.isU128 || prim.isU256 || prim.isI64 || prim.isI128) return "string";
+  if (prim.isNonZeroU64 || prim.isNonZeroU128 || prim.isNonZeroU256) return "string";
+  // Hex/address types
+  if (prim.isActorId || prim.isCodeId || prim.isMessageId || prim.isH256 || prim.isH160) return "string";
+  return "unknown";
+}
+
+function getTsType(def: any): string {
+  if (!def) return "unknown";
+  if (def.isPrimitive) return primToTs(def.asPrimitive);
+  if (def.isOptional) {
+    const inner = getTsType(def.asOptional.def);
+    return inner.includes("|") || inner.includes("{") ? `(${inner}) | null` : `${inner} | null`;
+  }
+  if (def.isVec) {
+    const inner = getTsType(def.asVec.def);
+    return inner.includes("|") || inner.includes("{") ? `(${inner})[]` : `${inner}[]`;
+  }
+  if (def.isStruct) {
+    const fields = def.asStruct.fields
+      .map((f: any) => `${f.name}: ${getTsType(f.def)}`)
+      .join("; ");
+    return `{ ${fields} }`;
+  }
+  if (def.isEnum) {
+    const hasPayloads = def.asEnum.variants.some((v: any) => v.def && !v.def.isNull);
+    if (hasPayloads) return "unknown";
+    return def.asEnum.variants.map((v: any) => `"${v.name}"`).join(" | ");
+  }
+  if (def.isResult || def.isMap) return "unknown";
+  if (def.isFixedSizeArray) {
+    const inner = getTsType(def.asFixedSizeArray.def);
+    return inner.includes("|") || inner.includes("{") ? `(${inner})[]` : `${inner}[]`;
+  }
+  if (def.isUserDefined) return "unknown";
+  return "unknown";
+}
+
 // --- Naming conventions ---
 // Queries: strip "Get" prefix, add "query" prefix. GetState -> queryState, GetCounter -> queryCounter
 // Commands: add "tx" prefix. Increment -> txIncrement, SendMessage -> txSendMessage
@@ -98,12 +146,16 @@ function txFnName(methodName: string): string {
 interface ParamInfo {
   name: string;
   typeLabel: string;
+  tsType: string;
+  def: any;
 }
 
 function getParams(func: any): ParamInfo[] {
   return func.params.map((p: any) => ({
     name: p.name,
     typeLabel: getTypeLabel(p.def),
+    tsType: getTsType(p.def),
+    def: p.def,
   }));
 }
 
@@ -184,7 +236,7 @@ function generateSailsClient(
   for (const q of queries) {
     const fnName = queryFnName(q.name);
     const params = getParams(q);
-    const paramArgs = params.map((p) => `${p.name}: unknown`).join(", ");
+    const paramArgs = params.map((p) => `${p.name}: ${p.tsType}`).join(", ");
     const paramCall = params.map((p) => p.name).join(", ");
     const hasParams = params.length > 0;
 
@@ -204,7 +256,7 @@ function generateSailsClient(
     const fnName = txFnName(cmd.name);
     const params = getParams(cmd);
     const extraArgs = params
-      .map((p) => `  ${p.name}: unknown,`)
+      .map((p) => `  ${p.name}: ${p.tsType},`)
       .join("\n");
     const paramCall = params.map((p) => p.name).join(", ");
 
@@ -301,6 +353,17 @@ function defaultValueStr(typeLabel: string): string {
   return '""';
 }
 
+// --- Icon heuristic ---
+
+function methodIcon(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.includes("message") || lower.includes("send") || lower.includes("chat")) return "ChatText";
+  if (lower.includes("ping") || lower.includes("schedule") || lower.includes("delay")) return "Clock";
+  if (lower.includes("greeting") || lower.includes("set")) return "PencilSimple";
+  if (lower.includes("increment") || lower.includes("count") || lower.includes("add")) return "PlusCircle";
+  return "ArrowUp";
+}
+
 // --- Generate ActionsPanel.tsx ---
 
 function generateActionsPanel(
@@ -309,13 +372,21 @@ function generateActionsPanel(
 ): string {
   const L: string[] = [];
 
+  // Collect unique icons used by no-param commands (only they render icons in buttons)
+  const cmdIcons = new Set(
+    commands.filter((c) => c.params.length === 0).map((c) => methodIcon(c.name))
+  );
+  // Always need these for TxStatus
+  const allIcons = new Set(["CircleNotch", "CheckCircle", "XCircle", ...cmdIcons]);
+  const iconList = [...allIcons].sort().join(", ");
+
   // Imports
   const txImports = commands.map((c) => txFnName(c.name));
   L.push(HEADER);
   L.push(`import { useState } from "react";`);
   L.push(`import { motion, AnimatePresence } from "framer-motion";`);
   L.push(`import {`);
-  L.push(`  ArrowUp, CircleNotch, CheckCircle, XCircle,`);
+  L.push(`  ${iconList},`);
   L.push(`} from "@phosphor-icons/react";`);
   L.push(`import { useChainApi, useWallet } from "@/providers/chain-provider";`);
   L.push(`import {`);
@@ -438,7 +509,7 @@ function generateActionsPanel(
       L.push(`            disabled={disabled || busy}`);
       L.push(`            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97]"`);
       L.push(`          >`);
-      L.push(`            <ArrowUp size={16} weight="bold" />`);
+      L.push(`            <${methodIcon(cmd.name)} size={16} weight="bold" />`);
       L.push(`            ${cmd.name}`);
       L.push(`          </button>`);
     } else {

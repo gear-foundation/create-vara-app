@@ -11,15 +11,20 @@ vara-ai-starter/
 │   ├── client/             # Auto-generated Rust client + build script
 │   ├── tests/gtest.rs      # Integration tests
 │   └── demo.idl            # Generated IDL (after build)
+├── scripts/
+│   ├── build.sh            # Build program + sync IDL + scaffold + run tests
+│   └── scaffold-client.ts  # IDL-driven codegen: generates sails-client, ActionsPanel, StatePanel
 ├── frontend/               # Vite + React + TypeScript + Tailwind
 │   ├── src/
 │   │   ├── lib/wallet.ts           # Wallet detection via window.injectedWeb3
-│   │   ├── lib/sails-client.ts     # Sails IDL client wrapper
+│   │   ├── lib/sails-client.ts     # GENERATED: typed query/tx wrappers
+│   │   ├── lib/idl-introspect.ts   # Runtime IDL metadata for DebugPanel
 │   │   ├── providers/chain-provider.tsx  # API + wallet context
-│   │   ├── components/             # UI components
+│   │   ├── components/ActionsPanel.tsx   # GENERATED: command UI
+│   │   ├── components/StatePanel.tsx     # GENERATED: query UI
+│   │   ├── components/             # Shared UI components
 │   │   └── assets/demo.idl         # Bundled IDL for frontend
 │   └── .env.example
-├── scripts/build.sh        # Build program + sync IDL + run tests
 ├── CLAUDE.md               # This file
 └── README.md
 ```
@@ -50,20 +55,30 @@ npm install --legacy-peer-deps
 npm run dev
 ```
 
+### Regenerate frontend from IDL
+```bash
+cd frontend
+./node_modules/.bin/tsx ../scripts/scaffold-client.ts
+```
+Reads `src/assets/demo.idl` and regenerates:
+- `src/lib/sails-client.ts` (typed query/tx wrappers)
+- `src/components/ActionsPanel.tsx` (command UI)
+- `src/components/StatePanel.tsx` (query UI)
+
 ### Full build pipeline
 ```bash
 ./scripts/build.sh
 ```
-Builds program, syncs IDL to frontend, runs tests.
+Builds program, syncs IDL to frontend, runs scaffold, runs tests.
 
 ## Sails Program Architecture
 
 The demo program (`programs/demo/app/src/lib.rs`) demonstrates:
 
 - **Static mut state pattern** with `#![allow(static_mut_refs)]`
-- **Commands** (mutating): `increment()`, `send_message()`, `schedule_ping()`, `handle_ping()`
-- **Queries** (read-only): `get_state()`, `get_counter()`, `get_messages()`
-- **Events**: `Incremented`, `MessageSent`, `PingScheduled`, `PingReceived`
+- **Commands** (mutating): `increment()`, `send_message()`, `schedule_ping()`, `handle_ping()`, `set_greeting()`
+- **Queries** (read-only): `get_state()`, `get_counter()`, `get_messages()`, `get_greeting()`
+- **Events**: `Incremented`, `MessageSent`, `PingScheduled`, `PingReceived`, `GreetingSet`
 - **Delayed messages**: `schedule_ping()` sends a delayed self-message
 - **Input validation**: message length cap, delay minimum
 - **Ring buffer**: messages capped at 100, oldest evicted
@@ -81,29 +96,19 @@ pub fn my_command(&mut self, arg: String) -> String {
 }
 ```
 
-2. Add the event variant to `DemoEvents` enum (if needed):
-```rust
-MyEvent { field: Type },
+2. Add the event variant to `DemoEvents` enum (if needed).
+
+3. Add a test in `tests/gtest.rs`.
+
+4. Rebuild and regenerate:
+```bash
+cd programs/demo && cargo build --release && cargo test --release
+cp demo.idl ../../frontend/src/assets/demo.idl
+cd ../../frontend && ./node_modules/.bin/tsx ../scripts/scaffold-client.ts
 ```
+Or run `./scripts/build.sh` for the full pipeline.
 
-3. Add a test in `tests/gtest.rs`:
-```rust
-#[tokio::test]
-async fn test_my_command() {
-    let actor = setup().await;
-    let mut demo = actor.demo();
-    let result: String = demo.my_command("arg".to_string()).await.unwrap();
-    assert_eq!(result, "expected");
-}
-```
-
-4. Rebuild: `cargo build --release && cargo test --release`
-
-5. Sync IDL: `./scripts/build.sh` or copy `demo.idl` to `frontend/src/assets/demo.idl`
-
-6. Add frontend action in `frontend/src/components/ActionsPanel.tsx`
-
-7. Add sails-client wrapper in `frontend/src/lib/sails-client.ts`
+The scaffold auto-generates typed wrappers in `sails-client.ts`, a button in `ActionsPanel.tsx`, and any new query display in `StatePanel.tsx`. Custom code should go in separate files (generated files are overwritten on re-scaffold).
 
 ## How to Add a New Query
 
@@ -115,15 +120,7 @@ pub fn my_query(&self) -> MyReturnType {
 }
 ```
 
-2. Rebuild and sync IDL.
-
-3. Add frontend query in `sails-client.ts`:
-```typescript
-export async function queryMyData(api: GearApi) {
-  const sails = await initSails(api);
-  return getService(sails).queries.MyQuery().call();
-}
-```
+2. Rebuild and run scaffold (same as above). The query will appear in `StatePanel.tsx` automatically.
 
 ## How to Add State Fields
 

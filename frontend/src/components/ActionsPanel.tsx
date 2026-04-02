@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowUp, CircleNotch, CheckCircle, XCircle,
+  CheckCircle, CircleNotch, Clock, PlusCircle, XCircle,
 } from "@phosphor-icons/react";
 import { useChainApi, useWallet } from "@/providers/chain-provider";
 import {
@@ -165,7 +165,7 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
             disabled={disabled || busy}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97]"
           >
-            <ArrowUp size={16} weight="bold" />
+            <Clock size={16} weight="bold" />
             HandlePing
           </button>
           <TxStatus phase={hanPhase} error={hanError} onDismiss={() => { setHandlePingPhase("idle"); setHandlePingError(null); }} />
@@ -177,7 +177,7 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
             disabled={disabled || busy}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97]"
           >
-            <ArrowUp size={16} weight="bold" />
+            <PlusCircle size={16} weight="bold" />
             Increment
           </button>
           <TxStatus phase={incPhase} error={incError} onDismiss={() => { setIncrementPhase("idle"); setIncrementError(null); }} />

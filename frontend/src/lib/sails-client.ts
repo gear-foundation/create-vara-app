@@ -109,7 +109,7 @@ export async function txIncrement(
 export async function txSchedulePing(
   api: GearApi,
   account: string,
-  delay: unknown,
+  delay: number,
   signer?: unknown
 ) {
   const sails = await initSails(api);
@@ -125,7 +125,7 @@ export async function txSchedulePing(
 export async function txSendMessage(
   api: GearApi,
   account: string,
-  text: unknown,
+  text: string,
   signer?: unknown
 ) {
   const sails = await initSails(api);
@@ -141,7 +141,7 @@ export async function txSendMessage(
 export async function txSetGreeting(
   api: GearApi,
   account: string,
-  greeting: unknown,
+  greeting: string,
   signer?: unknown
 ) {
   const sails = await initSails(api);

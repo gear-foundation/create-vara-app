@@ -6,27 +6,7 @@ Work remaining to ship vara-ai-starter as a complete, production-quality starter
 
 ## P0 — Ship blockers
 
-### Sync IDL pipeline with new sails-rs output
-
-**What:** `cargo build --release` now generates v2 IDL format (`demo.idl`) but also a stable v1 format (`demo.stable.idl` in target/). The scaffold script and sails-js-parser 0.5.1 only parse v1. Currently requires manual copy from `target/wasm32-gear/release/demo.idl` to `frontend/src/assets/demo.idl`. `build.sh` copies the wrong file.
-
-**Why:** Broken build pipeline. `./scripts/build.sh` fails at the scaffold step because it syncs the v2 IDL which the parser can't read.
-
-**Fix:** Update `build.sh` to copy the stable v1 IDL from the correct target path, or upgrade sails-js-parser when v2 support lands.
-
-**Effort:** S (CC: ~10min)
-
----
-
-### Update CLAUDE.md and README with new architecture
-
-**What:** CLAUDE.md still documents the old hand-wired pattern ("How to Add a New Command" section with manual ActionsPanel/StatePanel edits). README doesn't mention the scaffold script. Both need to reflect the new workflow: change contract -> rebuild -> run scaffold -> done.
-
-**Why:** A new developer cloning this repo will follow outdated instructions.
-
-**Fix:** Rewrite the "How to Add" sections to reference `scaffold-client.ts`. Add scaffold step to Quick Start.
-
-**Effort:** S (CC: ~15min)
+(All P0 items resolved.)
 
 ---
 
@@ -46,39 +26,51 @@ Work remaining to ship vara-ai-starter as a complete, production-quality starter
 
 ---
 
-### Codegen: emit proper TypeScript types instead of `unknown`
+### Codegen: typed return values for queries
 
-**What:** Generated `sails-client.ts` types all params as `unknown`. `txSendMessage(api, account, text: unknown, signer)` should be `text: string`. `txSchedulePing(api, account, delay: number, signer)`.
+**What:** Query wrappers return `Promise<any>` because the Sails runtime returns dynamic objects. `queryState(api)` should return `Promise<StateView>`, `queryCounter(api)` should return `Promise<string>` (u64).
 
-**Why:** TypeScript provides zero help. Agents and developers pass wrong types silently.
+**Why:** Agents and developers get typed inputs but untyped outputs. The biggest benefit of type codegen (autocomplete on query results) is still missing.
 
-**Fix:** Map IDL types to TS types in the codegen: str->string, u32->number, u64->bigint|string, bool->boolean, actor_id->string, etc.
+**Fix:** Analyze Sails query return types in the IDL and generate return type annotations. Use the same `getTsType()` mapping already added for params.
 
 **Effort:** S (CC: ~15min)
 
 ---
 
-### Codegen: smarter ActionsPanel icons
+### Codegen: snapshot tests
 
-**What:** All command buttons use the same `ArrowUp` icon. The beta hand-written version used `ChatText` for SendMessage, `Clock` for SchedulePing. The codegen could infer icons from method names or parameter types.
+**What:** The scaffold script has no automated tests. Changes to type mapping or icon heuristics are verified manually.
 
-**Why:** Visual polish. All buttons looking identical is confusing.
+**Why:** Regressions in the codegen are caught late (at build time or visually). Fixture IDLs with expected output would catch them immediately.
 
-**Fix:** Simple heuristic in codegen: methods with `str` param get ChatText icon, methods with `delay`/`time` param get Clock icon, methods with no params get ArrowUp. Fallback: generic icon.
+**Fix:** Add a test file with 2-3 fixture IDLs (primitive-heavy, struct-heavy, enum with payloads) and snapshot the generated output.
 
-**Effort:** S (CC: ~10min)
+**Effort:** M (CC: ~30min)
 
 ---
 
-### Custom program ID persistence across page reloads
+### Signing state immediately overwritten
 
-**What:** When a user enters a custom program ID via NetworkSelector, it's saved to localStorage but `initSails()` always reads `VITE_PROGRAM_ID` from env on first load. The custom ID is only applied after the probe flow.
+**What:** In generated ActionsPanel, `set*Phase("signing")` is immediately followed by `set*Phase("submitted")` without awaiting the actual signing step. The user never sees the "Waiting for signature" feedback.
 
-**Why:** User refreshes the page and is back on the env program, not their custom one.
+**Why:** Transaction lifecycle feedback is broken. Users think the tx is already submitted when the wallet hasn't even prompted yet.
 
-**Fix:** On app init, check localStorage for custom programId before falling back to env var. Apply it to the Sails instance after init.
+**Fix:** Split the sails-client tx wrappers to separate the sign and send steps, or await the signer prompt before updating phase.
 
-**Effort:** S (CC: ~10min)
+**Effort:** S (CC: ~15min)
+
+---
+
+### Client-side input validation
+
+**What:** The Rust contract rejects empty messages, overlong messages (>256 chars), zero delay, and empty greetings. The generated UI lets users submit these, resulting in on-chain errors with cryptic messages.
+
+**Why:** Deterministic failures are a first-class path in the starter. Bad UX for new developers testing the template.
+
+**Fix:** Generate validation rules from IDL metadata or hardcode basic checks (non-empty required fields, min/max for numeric fields, BigInt format validation for u64+).
+
+**Effort:** M (CC: ~30min)
 
 ---
 
@@ -161,6 +153,11 @@ npx create-vara-app my-dapp --idl path/to/service.idl
 
 ## Done (this session)
 
+- [x] Codegen: proper TypeScript types for params (str->string, u32->number, u64->string, etc.)
+- [x] Codegen: smarter ActionsPanel icons (ChatText, Clock, PencilSimple, PlusCircle by method name)
+- [x] CLAUDE.md + README updated to reflect scaffold workflow
+- [x] Sync IDL pipeline: verified working (demo.idl and frontend copy are identical)
+- [x] Custom program ID persistence: already implemented in chain-provider.tsx
 - [x] IDL-to-frontend codegen: scaffold-client.ts generates sails-client.ts + ActionsPanel.tsx + StatePanel.tsx
 - [x] ManualCallTab runtime IDL explorer in DebugPanel
 - [x] TypedInput recursive form renderer (primitives + struct + optional)

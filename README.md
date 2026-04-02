@@ -35,6 +35,14 @@ npm run dev
 
 Open http://localhost:5173
 
+### Full pipeline (build + scaffold + test)
+
+```bash
+./scripts/build.sh
+```
+
+This builds the Sails program, syncs the IDL to the frontend, regenerates typed wrappers and UI components from the IDL via `scripts/scaffold-client.ts`, and runs tests.
+
 ### 3. Deploy and connect
 
 Deploy the WASM file (`programs/demo/target/wasm32-gear/release/demo.opt.wasm`) to Vara testnet, then set `VITE_PROGRAM_ID` in `frontend/.env`.
@@ -50,15 +58,15 @@ Deploy the WASM file (`programs/demo/target/wasm32-gear/release/demo.opt.wasm`) 
 - Full gtest suite (10 tests)
 
 ### React Frontend
+- IDL-driven codegen: `scripts/scaffold-client.ts` reads the IDL and generates typed client wrappers, ActionsPanel, and StatePanel
 - Wallet detection and connection
 - Program state reading with auto-refresh
 - Transaction signing with lifecycle feedback
-- Event log display
-- Debug panel with IDL viewer
+- Debug panel with runtime IDL explorer and manual call interface
 
 ## For AI Agents
 
-See `CLAUDE.md` for detailed instructions on how to extend this template: adding commands, queries, events, state fields, and frontend components.
+See `CLAUDE.md` for detailed instructions on how to extend this template. The workflow: add a method in Rust, rebuild, run the scaffold script, done. The frontend updates automatically.
 
 ## License
 
