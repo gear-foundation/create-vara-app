@@ -1,17 +1,17 @@
 import { useState, useEffect } from "react";
+import type { Sails } from "sails-js";
 import { useChainApi } from "@/providers/chain-provider";
 import { initSails } from "@/lib/sails-client";
 
 /**
  * Shared hook for accessing the Sails instance.
- * Handles lazy initialization and API reconnection (stale cache fix).
+ * Handles lazy initialization, API reconnection, and programId changes.
  */
 export function useSails() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [sails, setSails] = useState<any>(null);
+  const [sails, setSails] = useState<Sails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { api, apiStatus } = useChainApi();
+  const { api, apiStatus, programId } = useChainApi();
 
   useEffect(() => {
     if (!api || apiStatus !== "ready") {
@@ -26,7 +26,7 @@ export function useSails() {
     setLoading(true);
     setError(null);
 
-    initSails(api)
+    initSails(api, programId)
       .then((s) => {
         if (!cancelled) {
           setSails(s);
@@ -43,7 +43,7 @@ export function useSails() {
     return () => {
       cancelled = true;
     };
-  }, [api, apiStatus]);
+  }, [api, apiStatus, programId]);
 
   return { sails, loading, error };
 }
