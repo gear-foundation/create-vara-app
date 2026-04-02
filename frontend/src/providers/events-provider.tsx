@@ -9,7 +9,10 @@ import {
 import { useSails } from "@/hooks/use-sails";
 import { useChainApi } from "@/providers/chain-provider";
 
+let eventId = 0;
+
 export type DemoEvent = {
+  id: number;
   name: string;
   data: Record<string, unknown>;
   timestamp: number;
@@ -39,7 +42,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
   const pushEvent = useCallback((name: string, data: Record<string, unknown>) => {
     setEvents((prev) => {
-      const next = [{ name, data, timestamp: Date.now() }, ...prev];
+      const next = [{ id: ++eventId, name, data, timestamp: Date.now() }, ...prev];
       return next.length > MAX_EVENTS ? next.slice(0, MAX_EVENTS) : next;
     });
   }, []);
@@ -70,6 +73,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
     async function subscribeAll() {
       const eventNames = Object.keys(service.events);
+      let successCount = 0;
       for (const eventName of eventNames) {
         if (cancelled) return;
         try {
@@ -82,6 +86,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
           );
           if (!cancelled) {
             unsubscribers.push(unsub);
+            successCount++;
           } else {
             unsub();
           }
@@ -90,7 +95,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
         }
       }
       if (!cancelled) {
-        setStatus("listening");
+        setStatus(successCount > 0 ? "listening" : "error");
       }
     }
 

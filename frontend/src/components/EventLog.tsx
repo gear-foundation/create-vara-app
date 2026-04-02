@@ -92,8 +92,8 @@ export function EventLog() {
           </div>
         ) : (
           <AnimatePresence initial={false}>
-            {events.map((e, i) => (
-              <EventRow key={`${e.timestamp}-${i}`} event={e} />
+            {events.map((e) => (
+              <EventRow key={e.id} event={e} />
             ))}
           </AnimatePresence>
         )}
