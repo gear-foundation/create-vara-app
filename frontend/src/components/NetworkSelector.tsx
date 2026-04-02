@@ -144,7 +144,7 @@ export function NetworkSelector() {
               stiffness: 300,
               damping: 30,
             }}
-            className="absolute top-full left-0 mt-2 w-72 rounded-2xl border border-zinc-800/60 bg-[#18181b] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.6)] overflow-hidden z-50"
+            className="absolute top-full left-0 mt-2 w-[calc(100vw-2rem)] sm:w-72 rounded-2xl border border-zinc-800/60 bg-[#18181b] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.6)] overflow-hidden z-50"
           >
             <div className="px-5 py-3 border-b border-zinc-800/50">
               <span className="text-sm text-zinc-400 font-medium">

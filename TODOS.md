@@ -12,17 +12,7 @@ Work remaining to ship vara-ai-starter as a complete, production-quality starter
 
 ## P1 — High value, near-term
 
----
-
-### Codegen: snapshot tests
-
-**What:** The scaffold script has no automated tests. Changes to type mapping or icon heuristics are verified manually.
-
-**Why:** Regressions in the codegen are caught late (at build time or visually). Fixture IDLs with expected output would catch them immediately.
-
-**Fix:** Add a test file with 2-3 fixture IDLs (primitive-heavy, struct-heavy, enum with payloads) and snapshot the generated output.
-
-**Effort:** M (CC: ~30min)
+(All P1 items resolved.)
 
 ---
 
@@ -38,16 +28,6 @@ Work remaining to ship vara-ai-starter as a complete, production-quality starter
 
 ---
 
-### TypedInput: vec, enum, map support
-
-**What:** TypedInput MVP only handles primitives + struct + optional. Add vec (add/remove list), enum (dropdown + payload), map (key-value pairs).
-
-**Why:** More complex contracts use these types. Currently they fall back to JSON textarea.
-
-**Effort:** M (CC: ~30min)
-
----
-
 ### Dark/light theme toggle
 
 **What:** Currently hardcoded dark theme (#111113). Add a theme toggle in the header.
@@ -58,18 +38,11 @@ Work remaining to ship vara-ai-starter as a complete, production-quality starter
 
 ---
 
-### Responsive polish
-
-**What:** Mobile layout stacks columns but NetworkSelector dropdown and WalletModal need mobile-specific sizing (full-width on small screens).
-
-**Why:** The app technically works on mobile but feels cramped.
-
-**Effort:** S (CC: ~15min)
-
----
-
 ## Done (this session)
 
+- [x] TypedInput: vec (add/remove list) and enum (dropdown + payload) support
+- [x] Responsive polish: mobile-friendly dropdown widths for NetworkSelector + WalletModal
+- [x] Codegen snapshot tests: 37 vitest tests for type mapping, icons, helpers
 - [x] create-vara-app CLI: npx create-vara-app my-dapp --idl service.idl
 - [x] Client-side input validation: empty-string and min-1 checks in codegen
 - [x] ManualCallTab: resolve UserDefined types via sails.getTypeByName

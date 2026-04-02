@@ -95,7 +95,37 @@ export function TypedInput({
     );
   }
 
-  // Unsupported: vec, enum, result, map, fixedSizeArray
+  // Vec (add/remove list)
+  if (typeDef.isVec) {
+    return (
+      <VecInput
+        typeDef={typeDef}
+        value={value}
+        onChange={onChange}
+        label={label}
+        depth={depth}
+        visited={visited}
+        resolveType={resolveType}
+      />
+    );
+  }
+
+  // Enum (dropdown + optional payload)
+  if (typeDef.isEnum) {
+    return (
+      <EnumInput
+        typeDef={typeDef}
+        value={value}
+        onChange={onChange}
+        label={label}
+        depth={depth}
+        visited={visited}
+        resolveType={resolveType}
+      />
+    );
+  }
+
+  // Unsupported: result, map, fixedSizeArray
   return <JsonFallback label={label} typeDef={typeDef} value={value} onChange={onChange} />;
 }
 
@@ -273,6 +303,162 @@ function StructInput({
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+// --- Vec Input ---
+
+function VecInput({
+  typeDef,
+  value,
+  onChange,
+  label,
+  depth,
+  visited,
+  resolveType,
+}: {
+  typeDef: TypeDef;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  label?: string;
+  depth: number;
+  visited: Set<string>;
+  resolveType?: (name: string) => TypeDef | null;
+}) {
+  const items = Array.isArray(value) ? value : [];
+  const innerDef = typeDef.asVec.def;
+
+  function addItem() {
+    onChange([...items, null]);
+  }
+
+  function removeItem(idx: number) {
+    onChange(items.filter((_: unknown, i: number) => i !== idx));
+  }
+
+  function updateItem(idx: number, v: unknown) {
+    const next = [...items];
+    next[idx] = v;
+    onChange(next);
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-zinc-400">{label || "vec"}</span>
+        <button
+          onClick={addItem}
+          className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+        >
+          + add
+        </button>
+      </div>
+      {items.length > 0 && (
+        <div className="ml-2 pl-2 border-l border-zinc-800 space-y-1">
+          {items.map((item: unknown, i: number) => (
+            <div key={i} className="flex items-start gap-1">
+              <div className="flex-1 min-w-0">
+                <TypedInput
+                  typeDef={innerDef}
+                  value={item}
+                  onChange={(v) => updateItem(i, v)}
+                  label={`[${i}]`}
+                  depth={depth + 1}
+                  visited={visited}
+                  resolveType={resolveType}
+                />
+              </div>
+              <button
+                onClick={() => removeItem(i)}
+                className="text-[10px] text-zinc-600 hover:text-red-400 mt-4 transition-colors shrink-0"
+              >
+                x
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Enum Input ---
+
+function EnumInput({
+  typeDef,
+  value,
+  onChange,
+  label,
+  depth,
+  visited,
+  resolveType,
+}: {
+  typeDef: TypeDef;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  label?: string;
+  depth: number;
+  visited: Set<string>;
+  resolveType?: (name: string) => TypeDef | null;
+}) {
+  const variants = typeDef.asEnum.variants as Array<{ name: string; def: TypeDef }>;
+
+  // Value is either a string (simple enum) or { VariantName: payload }
+  let selectedVariant = variants[0]?.name ?? "";
+  let payload: unknown = null;
+
+  if (typeof value === "string") {
+    selectedVariant = value;
+  } else if (typeof value === "object" && value !== null) {
+    const keys = Object.keys(value);
+    if (keys.length > 0) {
+      selectedVariant = keys[0];
+      payload = (value as Record<string, unknown>)[keys[0]];
+    }
+  }
+
+  const currentVariant = variants.find((v) => v.name === selectedVariant);
+  const hasPayload = currentVariant?.def && !currentVariant.def.isNull;
+
+  function handleVariantChange(name: string) {
+    const v = variants.find((vr) => vr.name === name);
+    if (v?.def && !v.def.isNull) {
+      onChange({ [name]: null });
+    } else {
+      onChange(name);
+    }
+  }
+
+  function handlePayloadChange(p: unknown) {
+    onChange({ [selectedVariant]: p });
+  }
+
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-zinc-400">{label || "enum"}</label>
+      <select
+        value={selectedVariant}
+        onChange={(e) => handleVariantChange(e.target.value)}
+        className="w-full px-2 py-1 rounded bg-zinc-800 text-zinc-200 text-xs border border-zinc-700 focus:border-emerald-500 focus:outline-none"
+      >
+        {variants.map((v) => (
+          <option key={v.name} value={v.name}>{v.name}</option>
+        ))}
+      </select>
+      {hasPayload && currentVariant && (
+        <div className="ml-2 pl-2 border-l border-zinc-800">
+          <TypedInput
+            typeDef={currentVariant.def}
+            value={payload}
+            onChange={handlePayloadChange}
+            label={`${selectedVariant} payload`}
+            depth={depth + 1}
+            visited={visited}
+            resolveType={resolveType}
+          />
+        </div>
+      )}
     </div>
   );
 }
