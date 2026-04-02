@@ -7,13 +7,13 @@ Scaffold a typed Vara dApp from any Sails IDL. React + TypeScript + wallet + eve
 ## Quick Start
 
 ```bash
-npx create-vara-app my-dapp
+npm exec --yes -- create-vara-app my-dapp
 ```
 
 Or with your own contract IDL:
 
 ```bash
-npx create-vara-app my-dapp --idl path/to/service.idl
+npm exec --yes -- create-vara-app my-dapp --idl path/to/service.idl
 ```
 
 Then:
