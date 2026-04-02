@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Header } from "@/components/Header";
 import { StatePanel } from "@/components/StatePanel";
 import { ActionsPanel } from "@/components/ActionsPanel";
+import { SessionPanel } from "@/components/SessionPanel";
 import { EventLog } from "@/components/EventLog";
 import { DebugPanel } from "@/components/DebugPanel";
 import { EventsProvider } from "@/providers/events-provider";
@@ -55,6 +56,9 @@ export function App() {
 
             {/* Right column: write */}
             <div className="space-y-6 min-w-0">
+              <motion.div variants={fadeUp}>
+                <SessionPanel />
+              </motion.div>
               <motion.div variants={fadeUp}>
                 <ActionsPanel onTxSuccess={handleTxSuccess} />
               </motion.div>
