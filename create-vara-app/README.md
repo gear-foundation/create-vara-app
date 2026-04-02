@@ -5,8 +5,8 @@ Bootstrap a typed Vara Network dApp frontend from any Sails IDL.
 ## Usage
 
 ```bash
-npm exec --yes -- create-vara-app my-dapp
-npm exec --yes -- create-vara-app my-dapp --idl path/to/service.idl
+npx create-vara-app my-dapp
+npx create-vara-app my-dapp --idl path/to/service.idl
 ```
 
 Without `--idl`, creates a project with a demo contract (counter, messages, ping, greeting).
