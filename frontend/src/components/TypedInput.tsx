@@ -11,6 +11,7 @@ interface TypedInputProps {
   label?: string;
   depth?: number;
   visited?: Set<string>;
+  resolveType?: (name: string) => TypeDef | null;
 }
 
 /**
@@ -24,6 +25,7 @@ export function TypedInput({
   label,
   depth = 0,
   visited = new Set(),
+  resolveType,
 }: TypedInputProps) {
   // Depth guard: fall back to JSON textarea
   if (depth > 4 || !typeDef) {
@@ -38,8 +40,23 @@ export function TypedInput({
     if (visited.has(name)) {
       return <JsonFallback label={label} typeDef={typeDef} value={value} onChange={onChange} />;
     }
-    // We can't resolve user-defined types without the Sails instance here.
-    // Fall back to JSON for now.
+    // Try to resolve the type via Sails instance
+    if (resolveType) {
+      const resolved = resolveType(name);
+      if (resolved?.def) {
+        return (
+          <TypedInput
+            typeDef={resolved.def}
+            value={value}
+            onChange={onChange}
+            label={label ?? name}
+            depth={depth + 1}
+            visited={new Set([...visited, name])}
+            resolveType={resolveType}
+          />
+        );
+      }
+    }
     return <JsonFallback label={label} typeDef={typeDef} value={value} onChange={onChange} />;
   }
 
@@ -58,6 +75,7 @@ export function TypedInput({
         label={label}
         depth={depth}
         visited={visited}
+        resolveType={resolveType}
       />
     );
   }
@@ -72,6 +90,7 @@ export function TypedInput({
         label={label}
         depth={depth}
         visited={visited}
+        resolveType={resolveType}
       />
     );
   }
@@ -176,6 +195,7 @@ function OptionalInput({
   label,
   depth,
   visited,
+  resolveType,
 }: {
   typeDef: TypeDef;
   value: unknown;
@@ -183,6 +203,7 @@ function OptionalInput({
   label?: string;
   depth: number;
   visited: Set<string>;
+  resolveType?: (name: string) => TypeDef | null;
 }) {
   const hasValue = value !== null && value !== undefined;
 
@@ -205,6 +226,7 @@ function OptionalInput({
             onChange={onChange}
             depth={depth + 1}
             visited={visited}
+            resolveType={resolveType}
           />
         </div>
       )}
@@ -221,6 +243,7 @@ function StructInput({
   label,
   depth,
   visited,
+  resolveType,
 }: {
   typeDef: TypeDef;
   value: unknown;
@@ -228,6 +251,7 @@ function StructInput({
   label?: string;
   depth: number;
   visited: Set<string>;
+  resolveType?: (name: string) => TypeDef | null;
 }) {
   const fields = typeDef.asStruct.fields;
   const obj = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
@@ -245,6 +269,7 @@ function StructInput({
             label={f.name}
             depth={depth + 1}
             visited={visited}
+            resolveType={resolveType}
           />
         ))}
       </div>
