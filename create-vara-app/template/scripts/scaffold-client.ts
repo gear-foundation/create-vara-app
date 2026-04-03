@@ -321,11 +321,11 @@ function generateActionsPanel(
   L.push(`  return (`);
   L.push(`    <AnimatePresence mode="wait">`);
   L.push(`      {phase !== "idle" && (`);
-  L.push(`        <motion.div key={phase} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ type: "spring" as const, stiffness: 200, damping: 25 }} className={\`mt-2.5 \${phase === "error" ? "bg-red-500/5 border border-red-500/10 rounded-xl p-3" : "flex items-center gap-1.5"}\`}>`);
-  L.push(`          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" /><span className="text-sm text-amber-400">Waiting for signature</span></>)}`);
-  L.push(`          {phase === "submitted" && (<><CircleNotch size={14} className="animate-spin text-emerald-400" /><span className="text-sm text-emerald-400">Processing</span></>)}`);
-  L.push(`          {phase === "confirmed" && (<><CheckCircle size={14} weight="fill" className="text-emerald-400" /><span className="text-sm text-emerald-400">Confirmed</span></>)}`);
-  L.push(`          {phase === "error" && (<div className="flex items-start gap-2"><XCircle size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" /><span className="text-sm text-red-400 flex-1">{error}</span>{onDismiss && (<button onClick={onDismiss} className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0"><XCircle size={14} weight="bold" /></button>)}</div>)}`);
+  L.push(`        <motion.div key={phase} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ type: "spring" as const, stiffness: 200, damping: 25 }} className={\`mt-2.5 \${phase === "error" ? "bg-red-500/5 border border-red-500/10 rounded-xl p-3" : "flex items-center gap-1.5"}\`} role="status" aria-live="polite">`);
+  L.push(`          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" aria-hidden="true" /><span className="text-sm text-amber-400">Waiting for signature</span></>)}`);
+  L.push(`          {phase === "submitted" && (<><CircleNotch size={14} className="animate-spin text-emerald-400" aria-hidden="true" /><span className="text-sm text-emerald-400">Processing</span></>)}`);
+  L.push(`          {phase === "confirmed" && (<><CheckCircle size={14} weight="fill" className="text-emerald-400" aria-hidden="true" /><span className="text-sm text-emerald-400">Confirmed</span></>)}`);
+  L.push(`          {phase === "error" && (<div className="flex items-start gap-2"><XCircle size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" aria-hidden="true" /><span className="text-sm text-red-400 flex-1">{error}</span>{onDismiss && (<button onClick={onDismiss} aria-label="Dismiss error" className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-red-400/50 rounded"><XCircle size={14} weight="bold" aria-hidden="true" /></button>)}</div>)}`);
   L.push(`        </motion.div>`);
   L.push(`      )}`);
   L.push(`    </AnimatePresence>`);
@@ -441,42 +441,47 @@ function generateActionsPanel(
       L.push(`          <button`);
       L.push(`            onClick={handle${cmd.name}}`);
       L.push(`            disabled={disabled || busy}`);
-      L.push(`            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97]"`);
+      L.push(`            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none"`);
       L.push(`          >`);
-      L.push(`            <${methodIcon(cmd.name)} size={16} weight="bold" />`);
+      L.push(`            <${methodIcon(cmd.name)} size={16} weight="bold" aria-hidden="true" />`);
       L.push(`            ${cmd.name}`);
       L.push(`          </button>`);
     } else {
       // Command with params
-      L.push(`          <label className="block text-sm text-zinc-400 font-medium mb-2">${cmd.name}</label>`);
+      const cmdId = cmd.name.toLowerCase();
       L.push(`          <div className="flex gap-2 items-center">`);
 
       for (const p of params) {
         const stateVar = `${prefix}${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`;
         const setterVar = `set${cmd.name}${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`;
+        const inputId = `${cmdId}-${p.name}`;
 
         if (p.typeLabel === "str" || p.typeLabel === "char") {
           L.push(`            <div className="flex-1 relative">`);
-          L.push(`              <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name}..." className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />`);
+          L.push(`              <label htmlFor="${inputId}" className="sr-only">${p.name}</label>`);
+          L.push(`              <input id="${inputId}" type="text" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name}\u2026" className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors placeholder:text-zinc-500" />`);
           L.push(`              {${stateVar}.length > 0 && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-600">{${stateVar}.length}</span>}`);
           L.push(`            </div>`);
         } else if (isSmallNumeric(p.typeLabel)) {
-          L.push(`            <input type="number" value={${stateVar}} onChange={(e) => ${setterVar}(Number(e.target.value))} className="w-24 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all" />`);
-          L.push(`            <span className="text-sm text-zinc-400">${p.name}</span>`);
+          L.push(`            <label htmlFor="${inputId}" className="text-sm text-zinc-400">${p.name}</label>`);
+          L.push(`            <input id="${inputId}" type="number" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(Number(e.target.value))} className="w-24 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors" />`);
         } else if (isBigNumeric(p.typeLabel)) {
-          L.push(`            <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="0" className="w-32 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all" />`);
+          L.push(`            <label htmlFor="${inputId}" className="sr-only">${p.name}</label>`);
+          L.push(`            <input id="${inputId}" type="text" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="0" className="w-32 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors" />`);
           L.push(`            <span className="text-sm text-zinc-400">${p.name} (${p.typeLabel})</span>`);
         } else if (isHexType(p.typeLabel)) {
-          L.push(`            <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="0x..." className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />`);
+          L.push(`            <label htmlFor="${inputId}" className="sr-only">${p.name}</label>`);
+          L.push(`            <input id="${inputId}" type="text" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="0x\u2026" className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors placeholder:text-zinc-500" />`);
         } else if (p.typeLabel === "bool") {
-          L.push(`            <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={${stateVar}} onChange={(e) => ${setterVar}(e.target.checked)} className="rounded" />${p.name}</label>`);
+          L.push(`            <label className="flex items-center gap-2 text-sm text-zinc-300"><input id="${inputId}" type="checkbox" checked={${stateVar}} onChange={(e) => ${setterVar}(e.target.checked)} className="rounded" />${p.name}</label>`);
         } else {
           // Fallback: text input for complex types
-          L.push(`            <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name} (${p.typeLabel})" className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />`);
+          L.push(`            <label htmlFor="${inputId}" className="sr-only">${p.name}</label>`);
+          L.push(`            <input id="${inputId}" type="text" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name} (${p.typeLabel})" className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors placeholder:text-zinc-500" />`);
         }
       }
 
-      L.push(`            <button onClick={handle${cmd.name}} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-all disabled:opacity-30 active:scale-[0.97] ml-auto">${cmd.name}</button>`);
+      L.push(`            <button onClick={handle${cmd.name}} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors disabled:opacity-30 active:scale-[0.97] ml-auto focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">${cmd.name}</button>`);
       L.push(`          </div>`);
     }
 
@@ -658,8 +663,8 @@ function generateStatePanel(
   L.push(`    <div className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-6 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.4)]">`);
   L.push(`      <div className="flex items-center justify-between mb-6">`);
   L.push(`        <h2 className="text-sm font-medium text-zinc-400">Program State</h2>`);
-  L.push(`        <button onClick={fetchState} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors active:scale-[0.93]">`);
-  L.push(`          <ArrowsClockwise size={16} weight="bold" />`);
+  L.push(`        <button onClick={fetchState} aria-label="Refresh state" className="p-2 rounded-lg text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors active:scale-[0.93] focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">`);
+  L.push(`          <ArrowsClockwise size={16} weight="bold" aria-hidden="true" />`);
   L.push(`        </button>`);
   L.push(`      </div>`);
   L.push(``);
@@ -674,7 +679,7 @@ function generateStatePanel(
   L.push(`      ) : error && !${firstDataVar} ? (`);
   L.push(`        <div className="rounded-xl bg-red-500/5 border border-red-500/10 p-4">`);
   L.push(`          <p className="text-sm text-red-400">{error}</p>`);
-  L.push(`          <button onClick={fetchState} className="mt-2 text-sm text-red-400/80 underline underline-offset-2 hover:text-red-300">Try again</button>`);
+  L.push(`          <button onClick={fetchState} className="mt-2 text-sm text-red-400/80 underline underline-offset-2 hover:text-red-300 focus-visible:ring-2 focus-visible:ring-red-400/50 rounded focus-visible:outline-none">Try again</button>`);
   L.push(`        </div>`);
 
   // Empty state
@@ -725,8 +730,14 @@ function generateStatePanel(
       L.push(`              <div className="border-t border-zinc-800/50 pt-4 mt-4">`);
       L.push(`                <h3 className="text-sm text-zinc-400 mb-3">${qi.displayName} ({${dataVar}.length})</h3>`);
       L.push(`                <div className="max-h-48 overflow-y-auto overflow-x-hidden divide-y divide-zinc-800/30">`);
+      // Use first text field + index as composite key for stable identity
+      const keyField = qi.vecFields.find((f: any) => {
+        const tl = getTypeLabel(f.def);
+        return tl !== "actor_id" && tl !== "opt actor_id";
+      });
+      const keyExpr = keyField ? `\`\${item.${keyField.name}}-\${i}\`` : "i";
       L.push(`                  {${dataVar}.map((item: ${vecTypeName}, i: number) => (`);
-      L.push(`                    <div key={i} className="py-2 text-sm text-zinc-400 min-w-0">`);
+      L.push(`                    <div key={${keyExpr}} className="py-2 text-sm text-zinc-400 min-w-0">`);
 
       // Render each field based on type
       const addressFields: string[] = [];

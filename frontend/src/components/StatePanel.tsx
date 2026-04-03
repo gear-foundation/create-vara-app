@@ -72,8 +72,8 @@ export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {
     <div className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-6 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.4)]">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-sm font-medium text-zinc-400">Program State</h2>
-        <button onClick={fetchState} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors active:scale-[0.93]">
-          <ArrowsClockwise size={16} weight="bold" />
+        <button onClick={fetchState} aria-label="Refresh state" className="p-2 rounded-lg text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors active:scale-[0.93] focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">
+          <ArrowsClockwise size={16} weight="bold" aria-hidden="true" />
         </button>
       </div>
 
@@ -84,7 +84,7 @@ export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {
       ) : error && !messagesData ? (
         <div className="rounded-xl bg-red-500/5 border border-red-500/10 p-4">
           <p className="text-sm text-red-400">{error}</p>
-          <button onClick={fetchState} className="mt-2 text-sm text-red-400/80 underline underline-offset-2 hover:text-red-300">Try again</button>
+          <button onClick={fetchState} className="mt-2 text-sm text-red-400/80 underline underline-offset-2 hover:text-red-300 focus-visible:ring-2 focus-visible:ring-red-400/50 rounded focus-visible:outline-none">Try again</button>
         </div>
       ) : !messagesData ? (
         <div className="py-8 text-center">
@@ -99,7 +99,7 @@ export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {
                 <h3 className="text-sm text-zinc-400 mb-3">Messages ({messagesData.length})</h3>
                 <div className="max-h-48 overflow-y-auto overflow-x-hidden divide-y divide-zinc-800/30">
                   {messagesData.map((item: StoredMessage, i: number) => (
-                    <div key={i} className="py-2 text-sm text-zinc-400 min-w-0">
+                    <div key={`${item.text}-${i}`} className="py-2 text-sm text-zinc-400 min-w-0">
                       <div className="flex items-start gap-2 min-w-0">
                         {item.sender && <CopyAddress address={String(item.sender)} />}
                         <span className="break-all">{String(item.text ?? "")}</span>
