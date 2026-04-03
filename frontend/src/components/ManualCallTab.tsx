@@ -176,7 +176,7 @@ export function ManualCallTab({ onTxSuccess }: { onTxSuccess?: () => void }) {
               value={argValues[arg.name]}
               onChange={(v) => setArgValues((prev) => ({ ...prev, [arg.name]: v }))}
               label={arg.name}
-              resolveType={sails ? (name: string) => { try { return sails.getTypeByName(name); } catch { return null; } } : undefined}
+              resolveType={sails ? (name: string) => { try { return sails.getTypeDef(name); } catch { return null; } } : undefined}
             />
           ))}
         </div>

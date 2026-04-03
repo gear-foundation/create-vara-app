@@ -56,12 +56,55 @@ function getParams(func: any): ParamInfo[] {
   }));
 }
 
+// --- Type collection ---
+
+function collectUserDefinedTypes(def: any, names: Set<string>): void {
+  if (!def) return;
+  if (def.isUserDefined) {
+    names.add(def.asUserDefined.name);
+  } else if (def.isVec) {
+    collectUserDefinedTypes(def.asVec.def, names);
+  } else if (def.isOptional) {
+    collectUserDefinedTypes(def.asOptional.def, names);
+  } else if (def.isStruct) {
+    for (const f of def.asStruct.fields) {
+      collectUserDefinedTypes(f.def, names);
+    }
+  } else if (def.isResult) {
+    collectUserDefinedTypes(def.asResult.ok.def, names);
+    collectUserDefinedTypes(def.asResult.err.def, names);
+  } else if (def.isMap) {
+    collectUserDefinedTypes(def.asMap.key.def, names);
+    collectUserDefinedTypes(def.asMap.value.def, names);
+  } else if (def.isFixedSizeArray) {
+    collectUserDefinedTypes(def.asFixedSizeArray.def, names);
+  }
+}
+
 // --- Code generation ---
+
+function generateTypeInterfaces(program: any): string[] {
+  const lines: string[] = [];
+  const types = program.types ?? [];
+  for (const type of types) {
+    const def = type.def;
+    if (def?.isStruct) {
+      lines.push(`export interface ${type.name} {`);
+      for (const field of def.asStruct.fields) {
+        lines.push(`  ${field.name}: ${getTsType(field.def)};`);
+      }
+      lines.push(`}`);
+      lines.push(``);
+    }
+  }
+  return lines;
+}
 
 function generateSailsClient(
   serviceName: string,
   queries: any[],
   commands: any[],
+  program: any,
   idlRelPath: string
 ): string {
   const lines: string[] = [];
@@ -74,16 +117,25 @@ function generateSailsClient(
     `// Custom helpers should go in a separate file (e.g., sails-helpers.ts)`,
     ``,
     `import type { GearApi } from "@gear-js/api";`,
+    `import type { Sails } from "sails-js";`,
+    `import type { SignerOptions } from "@polkadot/api/types";`,
     `import idlRaw from "@/assets/demo.idl?raw";`,
     ``,
   );
 
-  // initSails boilerplate
+  // Type interfaces from IDL
+  const typeLines = generateTypeInterfaces(program);
+  if (typeLines.length > 0) {
+    lines.push(`// -- Types from IDL --`, ``);
+    lines.push(...typeLines);
+  }
+
+  // initSails boilerplate — caches on API, sets programId before returning
   lines.push(
-    `let cachedSails: Promise<unknown> | null = null;`,
+    `let cachedSails: Promise<Sails> | null = null;`,
     `let cachedApi: GearApi | null = null;`,
     ``,
-    `export async function initSails(api: GearApi) {`,
+    `export async function initSails(api: GearApi, programId?: string): Promise<Sails> {`,
     `  // Invalidate cache if api instance changed (fixes stale connection after reconnect)`,
     `  if (cachedSails && cachedApi !== api) {`,
     `    cachedSails = null;`,
@@ -99,12 +151,6 @@ function generateSailsClient(
     `      const sails = new Sails(parser);`,
     `      sails.setApi(api);`,
     `      sails.parseIdl(idlRaw);`,
-    ``,
-    `      const programId = import.meta.env.VITE_PROGRAM_ID;`,
-    `      if (programId) {`,
-    `        sails.setProgramId(programId as \`0x\${string}\`);`,
-    `      }`,
-    ``,
     `      return sails;`,
     `    })().catch((err) => {`,
     `      cachedSails = null;`,
@@ -112,18 +158,19 @@ function generateSailsClient(
     `      throw err;`,
     `    });`,
     `  }`,
-    ``,
-    `  // eslint-disable-next-line @typescript-eslint/no-explicit-any`,
-    `  return cachedSails as Promise<any>;`,
+    `  const sails = await cachedSails;`,
+    `  if (programId) {`,
+    `    sails.setProgramId(programId as \`0x\${string}\`);`,
+    `  }`,
+    `  return sails;`,
     `}`,
     ``,
   );
 
   // getService helper with actual service name
   lines.push(
-    `// eslint-disable-next-line @typescript-eslint/no-explicit-any`,
-    `function getService(sails: any): any {`,
-    `  return sails?.services?.${serviceName} ?? sails?.services?.${serviceName.toLowerCase()};`,
+    `function getService(sails: Sails) {`,
+    `  return sails.services.${serviceName} ?? sails.services.${serviceName.toLowerCase()};`,
     `}`,
     ``,
   );
@@ -139,8 +186,8 @@ function generateSailsClient(
     const returnType = getTsType(q.def);
 
     lines.push(
-      `export async function ${fnName}(api: GearApi${hasParams ? `, ${paramArgs}` : ""}): Promise<${returnType}> {`,
-      `  const sails = await initSails(api);`,
+      `export async function ${fnName}(api: GearApi${hasParams ? `, ${paramArgs}` : ""}, programId?: string): Promise<${returnType}> {`,
+      `  const sails = await initSails(api, programId);`,
       `  const service = getService(sails);`,
       `  return service.queries.${q.name}(${paramCall}).call();`,
       `}`,
@@ -162,21 +209,24 @@ function generateSailsClient(
     lines.push(
       `export async function ${fnName}(`,
       `  api: GearApi,`,
+      `  programId: string,`,
       `  account: string,`,
     );
     if (params.length > 0) {
       lines.push(extraArgs);
     }
     lines.push(
-      `  signer?: unknown`,
+      `  signer?: unknown,`,
+      `  options?: { onSubmitted?: () => void },`,
       `): Promise<${returnType}> {`,
-      `  const sails = await initSails(api);`,
+      `  const sails = await initSails(api, programId);`,
       `  const service = getService(sails);`,
       `  const tx = service.functions.${cmd.name}(${paramCall});`,
       `  const result = await tx`,
-      `    .withAccount(account, signer ? { signer } : undefined)`,
+      `    .withAccount(account, signer ? { signer } as Partial<SignerOptions> : undefined)`,
       `    .calculateGas()`,
       `    .then(() => tx.signAndSend());`,
+      `  options?.onSubmitted?.();`,
       `  return result.response();`,
       `}`,
       ``,
@@ -245,6 +295,7 @@ function generateActionsPanel(
   const iconList = [...allIcons].sort().join(", ");
 
   // Imports
+  const txImports = commands.map((c) => txFnName(c.name));
   L.push(HEADER);
   L.push(`import { useState } from "react";`);
   L.push(`import { motion, AnimatePresence } from "framer-motion";`);
@@ -252,26 +303,29 @@ function generateActionsPanel(
   L.push(`  ${iconList},`);
   L.push(`} from "@phosphor-icons/react";`);
   L.push(`import { useChainApi, useWallet } from "@/providers/chain-provider";`);
-  L.push(`import { initSails } from "@/lib/sails-client";`);
-  L.push(`import { useSendTransaction } from "@/hooks/use-send-transaction";`);
+  L.push(`import {`);
+  for (const name of txImports) {
+    L.push(`  ${name},`);
+  }
+  L.push(`} from "@/lib/sails-client";`);
   L.push(``);
 
   // TxPhase type + TxStatus component (self-contained)
   L.push(`type TxPhase = "idle" | "signing" | "submitted" | "confirmed" | "error";`);
   L.push(``);
   L.push(`function TxStatus({`);
-  L.push(`  phase, error, signless, onDismiss,`);
+  L.push(`  phase, error, onDismiss,`);
   L.push(`}: {`);
-  L.push(`  phase: TxPhase; error: string | null; signless?: boolean; onDismiss?: () => void;`);
+  L.push(`  phase: TxPhase; error: string | null; onDismiss?: () => void;`);
   L.push(`}) {`);
   L.push(`  return (`);
   L.push(`    <AnimatePresence mode="wait">`);
   L.push(`      {phase !== "idle" && (`);
-  L.push(`        <motion.div key={phase} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ type: "spring" as const, stiffness: 200, damping: 25 }} className={\`mt-2.5 \${phase === "error" ? "bg-red-500/5 border border-red-500/10 rounded-xl p-3" : "flex items-center gap-1.5"}\`}>`);
-  L.push(`          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" /><span className="text-sm text-amber-400">{signless ? "Auto-signing" : "Waiting for signature"}</span></>)}`);
-  L.push(`          {phase === "submitted" && (<><CircleNotch size={14} className="animate-spin text-emerald-400" /><span className="text-sm text-emerald-400">Processing</span></>)}`);
-  L.push(`          {phase === "confirmed" && (<><CheckCircle size={14} weight="fill" className="text-emerald-400" /><span className="text-sm text-emerald-400">Confirmed</span></>)}`);
-  L.push(`          {phase === "error" && (<div className="flex items-start gap-2"><XCircle size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" /><span className="text-sm text-red-400 flex-1">{error}</span>{onDismiss && (<button onClick={onDismiss} className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0"><XCircle size={14} weight="bold" /></button>)}</div>)}`);
+  L.push(`        <motion.div key={phase} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ type: "spring" as const, stiffness: 200, damping: 25 }} className={\`mt-2.5 \${phase === "error" ? "bg-red-500/5 border border-red-500/10 rounded-xl p-3" : "flex items-center gap-1.5"}\`} role="status" aria-live="polite">`);
+  L.push(`          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" aria-hidden="true" /><span className="text-sm text-amber-400">Waiting for signature</span></>)}`);
+  L.push(`          {phase === "submitted" && (<><CircleNotch size={14} className="animate-spin text-emerald-400" aria-hidden="true" /><span className="text-sm text-emerald-400">Processing</span></>)}`);
+  L.push(`          {phase === "confirmed" && (<><CheckCircle size={14} weight="fill" className="text-emerald-400" aria-hidden="true" /><span className="text-sm text-emerald-400">Confirmed</span></>)}`);
+  L.push(`          {phase === "error" && (<div className="flex items-start gap-2"><XCircle size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" aria-hidden="true" /><span className="text-sm text-red-400 flex-1">{error}</span>{onDismiss && (<button onClick={onDismiss} aria-label="Dismiss error" className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-red-400/50 rounded"><XCircle size={14} weight="bold" aria-hidden="true" /></button>)}</div>)}`);
   L.push(`        </motion.div>`);
   L.push(`      )}`);
   L.push(`    </AnimatePresence>`);
@@ -281,9 +335,8 @@ function generateActionsPanel(
 
   // Main component
   L.push(`export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {`);
-  L.push(`  const { api, apiStatus } = useChainApi();`);
-  L.push(`  const { account, walletStatus } = useWallet();`);
-  L.push(`  const { sendTransaction, signless } = useSendTransaction();`);
+  L.push(`  const { api, apiStatus, programId } = useChainApi();`);
+  L.push(`  const { account, signer, walletStatus } = useWallet();`);
   L.push(`  const disabled = !api || apiStatus !== "ready" || walletStatus !== "connected" || !account;`);
   L.push(``);
 
@@ -311,6 +364,8 @@ function generateActionsPanel(
     const paramVars = params.map(
       (p) => `${prefix}${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`
     );
+    const callArgs = ["api", "programId", "account.address", ...paramVars, "signer"].join(", ");
+
     L.push(`  async function handle${cmd.name}() {`);
     L.push(`    if (!api || !account) return;`);
 
@@ -335,12 +390,8 @@ function generateActionsPanel(
     L.push(`    set${cmd.name}Phase("signing");`);
     L.push(`    set${cmd.name}Error(null);`);
     L.push(`    try {`);
-    L.push(`      const sails = await initSails(api);`);
-    L.push(`      const service = sails?.services?.${serviceName} ?? sails?.services?.${serviceName.toLowerCase()};`);
-    L.push(`      const tx = service.functions.${cmd.name}(${paramVars.join(", ")});`);
-    L.push(`      await sendTransaction(tx, {`);
-    L.push(`        onSigning: () => set${cmd.name}Phase("submitted"),`);
-    L.push(`        onSubmitted: () => {},`);
+    L.push(`      await ${fnName}(${callArgs}, {`);
+    L.push(`        onSubmitted: () => set${cmd.name}Phase("submitted"),`);
     L.push(`      });`);
     L.push(`      set${cmd.name}Phase("confirmed");`);
     L.push(`      onTxSuccess();`);
@@ -390,46 +441,51 @@ function generateActionsPanel(
       L.push(`          <button`);
       L.push(`            onClick={handle${cmd.name}}`);
       L.push(`            disabled={disabled || busy}`);
-      L.push(`            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97]"`);
+      L.push(`            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none"`);
       L.push(`          >`);
-      L.push(`            <${methodIcon(cmd.name)} size={16} weight="bold" />`);
+      L.push(`            <${methodIcon(cmd.name)} size={16} weight="bold" aria-hidden="true" />`);
       L.push(`            ${cmd.name}`);
       L.push(`          </button>`);
     } else {
       // Command with params
-      L.push(`          <label className="block text-sm text-zinc-400 font-medium mb-2">${cmd.name}</label>`);
+      const cmdId = cmd.name.toLowerCase();
       L.push(`          <div className="flex gap-2 items-center">`);
 
       for (const p of params) {
         const stateVar = `${prefix}${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`;
         const setterVar = `set${cmd.name}${p.name.charAt(0).toUpperCase() + p.name.slice(1)}`;
+        const inputId = `${cmdId}-${p.name}`;
 
         if (p.typeLabel === "str" || p.typeLabel === "char") {
           L.push(`            <div className="flex-1 relative">`);
-          L.push(`              <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name}..." className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />`);
+          L.push(`              <label htmlFor="${inputId}" className="sr-only">${p.name}</label>`);
+          L.push(`              <input id="${inputId}" type="text" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name}\u2026" className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors placeholder:text-zinc-500" />`);
           L.push(`              {${stateVar}.length > 0 && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-600">{${stateVar}.length}</span>}`);
           L.push(`            </div>`);
         } else if (isSmallNumeric(p.typeLabel)) {
-          L.push(`            <input type="number" value={${stateVar}} onChange={(e) => ${setterVar}(Number(e.target.value))} className="w-24 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all" />`);
-          L.push(`            <span className="text-sm text-zinc-400">${p.name}</span>`);
+          L.push(`            <label htmlFor="${inputId}" className="text-sm text-zinc-400">${p.name}</label>`);
+          L.push(`            <input id="${inputId}" type="number" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(Number(e.target.value))} className="w-24 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors" />`);
         } else if (isBigNumeric(p.typeLabel)) {
-          L.push(`            <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="0" className="w-32 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all" />`);
+          L.push(`            <label htmlFor="${inputId}" className="sr-only">${p.name}</label>`);
+          L.push(`            <input id="${inputId}" type="text" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="0" className="w-32 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors" />`);
           L.push(`            <span className="text-sm text-zinc-400">${p.name} (${p.typeLabel})</span>`);
         } else if (isHexType(p.typeLabel)) {
-          L.push(`            <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="0x..." className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />`);
+          L.push(`            <label htmlFor="${inputId}" className="sr-only">${p.name}</label>`);
+          L.push(`            <input id="${inputId}" type="text" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="0x\u2026" className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors placeholder:text-zinc-500" />`);
         } else if (p.typeLabel === "bool") {
-          L.push(`            <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={${stateVar}} onChange={(e) => ${setterVar}(e.target.checked)} className="rounded" />${p.name}</label>`);
+          L.push(`            <label className="flex items-center gap-2 text-sm text-zinc-300"><input id="${inputId}" type="checkbox" checked={${stateVar}} onChange={(e) => ${setterVar}(e.target.checked)} className="rounded" />${p.name}</label>`);
         } else {
           // Fallback: text input for complex types
-          L.push(`            <input type="text" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name} (${p.typeLabel})" className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />`);
+          L.push(`            <label htmlFor="${inputId}" className="sr-only">${p.name}</label>`);
+          L.push(`            <input id="${inputId}" type="text" autoComplete="off" value={${stateVar}} onChange={(e) => ${setterVar}(e.target.value)} placeholder="${p.name} (${p.typeLabel})" className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors placeholder:text-zinc-500" />`);
         }
       }
 
-      L.push(`            <button onClick={handle${cmd.name}} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-all disabled:opacity-30 active:scale-[0.97] ml-auto">${cmd.name}</button>`);
+      L.push(`            <button onClick={handle${cmd.name}} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors disabled:opacity-30 active:scale-[0.97] ml-auto focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">${cmd.name}</button>`);
       L.push(`          </div>`);
     }
 
-    L.push(`          <TxStatus phase={${prefix}Phase} error={${prefix}Error} signless={signless} onDismiss={() => { set${cmd.name}Phase("idle"); set${cmd.name}Error(null); }} />`);
+    L.push(`          <TxStatus phase={${prefix}Phase} error={${prefix}Error} onDismiss={() => { set${cmd.name}Phase("idle"); set${cmd.name}Error(null); }} />`);
     L.push(`        </div>`);
   }
 
@@ -503,8 +559,12 @@ function generateStatePanel(
     };
   });
 
-  // Build query imports
+  // Build query imports and collect type names used in return types
   const queryImports = queryInfos.map((qi) => qi.fnName);
+  const usedTypeNames = new Set<string>();
+  for (const qi of queryInfos) {
+    collectUserDefinedTypes(qi.func.def, usedTypeNames);
+  }
 
   L.push(HEADER);
   L.push(`import { useState, useEffect, useCallback } from "react";`);
@@ -515,6 +575,9 @@ function generateStatePanel(
   L.push(`import {`);
   for (const name of queryImports) {
     L.push(`  ${name},`);
+  }
+  for (const typeName of usedTypeNames) {
+    L.push(`  type ${typeName},`);
   }
   L.push(`} from "@/lib/sails-client";`);
   L.push(``);
@@ -541,13 +604,14 @@ function generateStatePanel(
 
   // Main component
   L.push(`export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {`);
-  L.push(`  const { api, apiStatus } = useChainApi();`);
+  L.push(`  const { api, apiStatus, programId } = useChainApi();`);
   L.push(`  const { account } = useWallet();`);
 
-  // State for each query result
+  // State for each query result — typed from IDL
   for (const qi of queryInfos) {
-    L.push(`  // eslint-disable-next-line @typescript-eslint/no-explicit-any`);
-    L.push(`  const [${qi.displayName.charAt(0).toLowerCase() + qi.displayName.slice(1)}Data, set${qi.displayName}Data] = useState<any>(null);`);
+    const returnType = getTsType(qi.func.def);
+    const stateVar = qi.displayName.charAt(0).toLowerCase() + qi.displayName.slice(1);
+    L.push(`  const [${stateVar}Data, set${qi.displayName}Data] = useState<${returnType} | null>(null);`);
   }
 
   L.push(`  const [loading, setLoading] = useState(true);`);
@@ -561,7 +625,7 @@ function generateStatePanel(
   L.push(`    try {`);
   L.push(`      const [${queryInfos.map((qi) => `r_${qi.displayName.toLowerCase()}`).join(", ")}] = await Promise.all([`);
   for (const qi of queryInfos) {
-    L.push(`        ${qi.fnName}(api),`);
+    L.push(`        ${qi.fnName}(api, programId),`);
   }
   L.push(`      ]);`);
   for (const qi of queryInfos) {
@@ -576,7 +640,7 @@ function generateStatePanel(
   L.push(`      setLoading(false);`);
   L.push(`      setPollInterval((prev) => Math.min(prev * 2, 60000));`);
   L.push(`    }`);
-  L.push(`  }, [api, apiStatus]);`);
+  L.push(`  }, [api, apiStatus, programId]);`);
   L.push(``);
 
   // Effects
@@ -599,8 +663,8 @@ function generateStatePanel(
   L.push(`    <div className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-6 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.4)]">`);
   L.push(`      <div className="flex items-center justify-between mb-6">`);
   L.push(`        <h2 className="text-sm font-medium text-zinc-400">Program State</h2>`);
-  L.push(`        <button onClick={fetchState} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors active:scale-[0.93]">`);
-  L.push(`          <ArrowsClockwise size={16} weight="bold" />`);
+  L.push(`        <button onClick={fetchState} aria-label="Refresh state" className="p-2 rounded-lg text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors active:scale-[0.93] focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">`);
+  L.push(`          <ArrowsClockwise size={16} weight="bold" aria-hidden="true" />`);
   L.push(`        </button>`);
   L.push(`      </div>`);
   L.push(``);
@@ -615,7 +679,7 @@ function generateStatePanel(
   L.push(`      ) : error && !${firstDataVar} ? (`);
   L.push(`        <div className="rounded-xl bg-red-500/5 border border-red-500/10 p-4">`);
   L.push(`          <p className="text-sm text-red-400">{error}</p>`);
-  L.push(`          <button onClick={fetchState} className="mt-2 text-sm text-red-400/80 underline underline-offset-2 hover:text-red-300">Try again</button>`);
+  L.push(`          <button onClick={fetchState} className="mt-2 text-sm text-red-400/80 underline underline-offset-2 hover:text-red-300 focus-visible:ring-2 focus-visible:ring-red-400/50 rounded focus-visible:outline-none">Try again</button>`);
   L.push(`        </div>`);
 
   // Empty state
@@ -658,21 +722,47 @@ function generateStatePanel(
         }
       }
     } else if (qi.isVec && qi.vecFields) {
-      // Vec of structs: render as a list
+      // Vec of structs: render each item using field metadata
+      const vecTypeName = qi.func.def?.asVec?.def?.isUserDefined
+        ? qi.func.def.asVec.def.asUserDefined.name
+        : "any";
       L.push(`            {${dataVar} && ${dataVar}.length > 0 && (`);
       L.push(`              <div className="border-t border-zinc-800/50 pt-4 mt-4">`);
       L.push(`                <h3 className="text-sm text-zinc-400 mb-3">${qi.displayName} ({${dataVar}.length})</h3>`);
       L.push(`                <div className="max-h-48 overflow-y-auto overflow-x-hidden divide-y divide-zinc-800/30">`);
-      L.push(`                  {${dataVar}.map((item: any, i: number) => (`);
-      L.push(`                    <div key={i} className="py-2 text-sm text-zinc-400 min-w-0">`);
-      L.push(`                      {item?.sender ? (`);
-      L.push(`                        <div className="flex items-start gap-2 min-w-0">`);
-      L.push(`                          <CopyAddress address={String(item.sender)} />`);
-      L.push(`                          <span className="break-all">{String(item.text ?? "")}</span>`);
-      L.push(`                        </div>`);
-      L.push(`                      ) : (`);
-      L.push(`                        <span className="break-all">{JSON.stringify(item)}</span>`);
-      L.push(`                      )}`);
+      // Use first text field + index as composite key for stable identity
+      const keyField = qi.vecFields.find((f: any) => {
+        const tl = getTypeLabel(f.def);
+        return tl !== "actor_id" && tl !== "opt actor_id";
+      });
+      const keyExpr = keyField ? `\`\${item.${keyField.name}}-\${i}\`` : "i";
+      L.push(`                  {${dataVar}.map((item: ${vecTypeName}, i: number) => (`);
+      L.push(`                    <div key={${keyExpr}} className="py-2 text-sm text-zinc-400 min-w-0">`);
+
+      // Render each field based on type
+      const addressFields: string[] = [];
+      const textFields: string[] = [];
+      for (const field of qi.vecFields) {
+        const ftl = getTypeLabel(field.def);
+        if (ftl === "actor_id" || ftl === "opt actor_id") {
+          addressFields.push(field.name);
+        } else {
+          textFields.push(field.name);
+        }
+      }
+      if (addressFields.length > 0 || textFields.length > 0) {
+        L.push(`                      <div className="flex items-start gap-2 min-w-0">`);
+        for (const af of addressFields) {
+          L.push(`                        {item.${af} && <CopyAddress address={String(item.${af})} />}`);
+        }
+        for (const tf of textFields) {
+          L.push(`                        <span className="break-all">{String(item.${tf} ?? "")}</span>`);
+        }
+        L.push(`                      </div>`);
+      } else {
+        L.push(`                      <span className="break-all">{JSON.stringify(item)}</span>`);
+      }
+
       L.push(`                    </div>`);
       L.push(`                  ))}`);
       L.push(`                </div>`);
@@ -741,7 +831,7 @@ async function main() {
   const idlRelPath = "src/assets/demo.idl";
 
   // 1. Generate sails-client.ts
-  const clientOutput = generateSailsClient(serviceName, queries, commands, idlRelPath);
+  const clientOutput = generateSailsClient(serviceName, queries, commands, program, idlRelPath);
   const clientPath = resolve(FRONTEND_DIR, "src/lib/sails-client.ts");
   writeFileSync(clientPath, clientOutput);
   console.log(`Generated: ${clientPath}`);

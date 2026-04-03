@@ -100,7 +100,7 @@ export function getTsType(def: AnyDef): string {
     const inner = getTsType(def.asFixedSizeArray.def);
     return inner.includes("|") || inner.includes("{") ? `(${inner})[]` : `${inner}[]`;
   }
-  if (def.isUserDefined) return "unknown";
+  if (def.isUserDefined) return def.asUserDefined.name;
   return "unknown";
 }
 

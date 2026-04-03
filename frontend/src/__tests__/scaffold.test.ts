@@ -192,8 +192,16 @@ describe("getTsType", () => {
     expect(getTsType(arr)).toBe("(number | null)[]");
   });
 
-  it("handles userDefined as unknown", () => {
-    expect(getTsType(userDefined("MyStruct"))).toBe("unknown");
+  it("handles userDefined by returning type name", () => {
+    expect(getTsType(userDefined("MyStruct"))).toBe("MyStruct");
+  });
+
+  it("handles vec of userDefined", () => {
+    expect(getTsType(vec(userDefined("StoredMessage")))).toBe("StoredMessage[]");
+  });
+
+  it("handles optional userDefined", () => {
+    expect(getTsType(opt(userDefined("StateView")))).toBe("StateView | null");
   });
 
   it("handles nested opt opt u32", () => {

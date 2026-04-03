@@ -84,14 +84,10 @@ export function NetworkSelector() {
       if (!service) throw new Error("Service not found in IDL");
       await service.queries.GetCounter().call();
 
-      // Probe succeeded — now update the shared Sails instance
+      // Probe succeeded — update state (all consumers re-render with new programId)
       localStorage.setItem(STORAGE_CUSTOM_PID, trimmed);
       localStorage.setItem(STORAGE_CUSTOM_EP, customEndpoint);
       setProgramId(trimmed);
-      // Also update the cached Sails singleton
-      const { initSails } = await import("@/lib/sails-client");
-      const sails = await initSails(api);
-      sails.setProgramId(trimmed as `0x${string}`);
       // Switch to the correct network if needed
       const targetNet = NETWORKS.find((n) =>
         customEndpoint === "mainnet" ? n.id === "mainnet" : n.id === "testnet"
