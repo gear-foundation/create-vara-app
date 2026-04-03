@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Lightning,
@@ -11,8 +11,7 @@ import {
   CaretUp,
 } from "@phosphor-icons/react";
 import { useChainApi, useWallet } from "@/providers/chain-provider";
-import { useVoucher } from "@/hooks/use-voucher";
-import { useSession } from "@/hooks/use-session";
+import { useSessionContext } from "@/providers/session-provider";
 import { blocksToHumanTime } from "@/lib/block-time";
 
 function truncateAddress(addr: string): string {
@@ -22,13 +21,12 @@ function truncateAddress(addr: string): string {
 
 /**
  * Session management card for signless transactions.
- * Placed above ActionsPanel. Uses muted card styling to distinguish from action cards.
- *
- * States: no session, awaiting voucher, active, expired, error.
+ * Reads all session/voucher state from SessionProvider context.
  */
 export function SessionPanel() {
-  const { api, apiStatus, programId, blockNumber } = useChainApi();
+  const { api, apiStatus, programId } = useChainApi();
   const { account, signer } = useWallet();
+  const session = useSessionContext();
   const [collapsed, setCollapsed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [fundingPhase, setFundingPhase] = useState<
@@ -36,38 +34,22 @@ export function SessionPanel() {
   >("idle");
   const [fundingError, setFundingError] = useState<string | null>(null);
 
-  // Check voucher for session address (or null if no session)
-  const [sessionAddr, setSessionAddr] = useState<string | null>(null);
-  const sessionVoucher = useVoucher(sessionAddr, programId || null);
-  const session = useSession(sessionVoucher.hasVoucher);
-
-  // Keep sessionAddr in sync with session hook (via useEffect to avoid render-phase setState)
-  useEffect(() => {
-    if (session.sessionAddress !== sessionAddr) {
-      setSessionAddr(session.sessionAddress);
-    }
-  }, [session.sessionAddress, sessionAddr]);
-
-  const remainingBlocks =
-    blockNumber && sessionVoucher.voucherDetails
-      ? Math.max(0, sessionVoucher.voucherDetails.expiry - blockNumber)
-      : null;
-
-  const isExpired = remainingBlocks !== null && remainingBlocks === 0;
+  const isExpired =
+    session.remainingBlocks !== null && session.remainingBlocks === 0;
 
   async function handleStartSession() {
     try {
-      const addr = await session.startSession();
-      setSessionAddr(addr);
+      await session.startSession();
     } catch {
-      // Error is captured in session.error
+      // Error captured in session.error
     }
   }
 
   function handleEndSession() {
     session.endSession();
-    setSessionAddr(null);
     setCollapsed(false);
+    setFundingPhase("idle");
+    setFundingError(null);
   }
 
   async function handleCopyAddress() {
@@ -78,37 +60,48 @@ export function SessionPanel() {
   }
 
   async function handleFundSession() {
-    if (!api || apiStatus !== "ready" || !account || !signer || !session.sessionAddress || !programId) return;
+    if (
+      !api ||
+      apiStatus !== "ready" ||
+      !account ||
+      !signer ||
+      !session.sessionAddress ||
+      !programId
+    )
+      return;
     setFundingPhase("signing");
     setFundingError(null);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const gearApi = api as any;
-      // Use the high-level voucher.issue() which handles param ordering
       const { extrinsic } = await gearApi.voucher.issue(
         session.sessionAddress,
         5_000_000_000_000n, // 5 VARA
-        3600,               // duration in blocks (~3h)
-        [programId],        // programs whitelist
+        3600, // ~3h at 3s blocks
+        [programId],
       );
-      // Sign and send the voucher issue extrinsic
       await new Promise<void>((resolve, reject) => {
-        extrinsic.signAndSend(
-          account.address,
-          { signer },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ({ status }: any) => {
-            if (status.isBroadcast) setFundingPhase("submitted");
-            if (status.isInBlock || status.isFinalized) resolve();
-            if (status.isInvalid || status.isDropped) reject(new Error("Transaction failed"));
-          },
-        ).catch((err: unknown) => reject(err));
+        extrinsic
+          .signAndSend(
+            account.address,
+            { signer },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ({ status }: any) => {
+              if (status.isBroadcast) setFundingPhase("submitted");
+              if (status.isInBlock || status.isFinalized) resolve();
+              if (status.isInvalid || status.isDropped)
+                reject(new Error("Transaction failed"));
+            },
+          )
+          .catch((err: unknown) => reject(err));
       });
-      sessionVoucher.refresh();
+      session.refreshVoucher();
       setFundingPhase("done");
     } catch (err) {
       setFundingPhase("error");
-      setFundingError(err instanceof Error ? err.message : "Failed to fund session");
+      setFundingError(
+        err instanceof Error ? err.message : "Failed to fund session",
+      );
     }
   }
 
@@ -120,8 +113,7 @@ export function SessionPanel() {
   if (session.error) state = "error";
   else if (session.isActive && !isExpired) state = "active";
   else if (session.isActive && isExpired) state = "expired";
-  else if (session.sessionAddress && !sessionVoucher.hasVoucher)
-    state = "awaiting";
+  else if (session.sessionAddress && !session.hasVoucher) state = "awaiting";
 
   return (
     <div className="rounded-2xl border border-zinc-700/30 bg-zinc-900/20 p-4 shadow-sm">
@@ -185,8 +177,14 @@ export function SessionPanel() {
                       </p>
                       {fundingPhase === "error" && fundingError && (
                         <div className="flex items-start gap-2 bg-red-500/5 border border-red-500/10 rounded-xl p-2">
-                          <XCircle size={14} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" />
-                          <span className="text-xs text-red-400">{fundingError}</span>
+                          <XCircle
+                            size={14}
+                            weight="fill"
+                            className="text-red-400 mt-0.5 flex-shrink-0"
+                          />
+                          <span className="text-xs text-red-400 break-all line-clamp-3">
+                            {fundingError}
+                          </span>
                         </div>
                       )}
                     </>
@@ -196,8 +194,12 @@ export function SessionPanel() {
                         size={14}
                         className={`animate-spin ${fundingPhase === "signing" ? "text-amber-400" : "text-emerald-400"}`}
                       />
-                      <span className={`text-sm ${fundingPhase === "signing" ? "text-amber-400" : "text-emerald-400"}`}>
-                        {fundingPhase === "signing" ? "Waiting for signature" : "Confirming on-chain"}
+                      <span
+                        className={`text-sm ${fundingPhase === "signing" ? "text-amber-400" : "text-emerald-400"}`}
+                      >
+                        {fundingPhase === "signing"
+                          ? "Waiting for signature"
+                          : "Confirming on-chain"}
                       </span>
                     </div>
                   )}
@@ -222,7 +224,10 @@ export function SessionPanel() {
                   </p>
                   <button
                     onClick={handleEndSession}
-                    disabled={fundingPhase === "signing" || fundingPhase === "submitted"}
+                    disabled={
+                      fundingPhase === "signing" ||
+                      fundingPhase === "submitted"
+                    }
                     className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-30"
                   >
                     Cancel
@@ -240,9 +245,9 @@ export function SessionPanel() {
                         Signless Active
                       </span>
                     </div>
-                    {remainingBlocks !== null && (
+                    {session.remainingBlocks !== null && (
                       <span className="text-xs text-zinc-500 font-mono">
-                        {blocksToHumanTime(remainingBlocks)} remaining
+                        {blocksToHumanTime(session.remainingBlocks)} remaining
                       </span>
                     )}
                   </div>
@@ -250,12 +255,20 @@ export function SessionPanel() {
                     Transactions appear from your session address, not your
                     wallet.
                   </p>
-                  <button
-                    onClick={handleEndSession}
-                    className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
-                  >
-                    End Session
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleEndSession}
+                      className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                    >
+                      Pause Session
+                    </button>
+                    <button
+                      onClick={() => session.clearSession()}
+                      className="text-xs text-zinc-700 hover:text-red-400 transition-colors"
+                    >
+                      Delete Key
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -263,7 +276,11 @@ export function SessionPanel() {
               {state === "expired" && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <Warning size={14} weight="fill" className="text-amber-400" />
+                    <Warning
+                      size={14}
+                      weight="fill"
+                      className="text-amber-400"
+                    />
                     <span className="text-sm text-amber-400">
                       Session Expired
                     </span>
@@ -300,14 +317,12 @@ export function SessionPanel() {
                       weight="fill"
                       className="text-red-400 mt-0.5 flex-shrink-0"
                     />
-                    <span className="text-xs text-red-400">
+                    <span className="text-xs text-red-400 break-all line-clamp-3">
                       {session.error}
                     </span>
                   </div>
                   <button
-                    onClick={() => {
-                      handleEndSession();
-                    }}
+                    onClick={handleEndSession}
                     className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
                   >
                     Dismiss

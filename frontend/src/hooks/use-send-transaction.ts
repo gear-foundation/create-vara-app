@@ -1,100 +1,88 @@
-import { useCallback, useRef } from "react";
-import { useChainApi, useWallet } from "@/providers/chain-provider";
-import { useVoucher } from "@/hooks/use-voucher";
-import { useSession } from "@/hooks/use-session";
+import { useCallback } from "react";
+import { useWallet } from "@/providers/chain-provider";
 
 interface SendTxCallbacks {
   onSigning?: () => void;
   onSubmitted?: () => void;
 }
 
-interface UseSendTransactionResult {
+interface SendTxOptions {
+  /** Voucher ID to attach (from useVoucher) */
+  voucherId?: string | null;
+  /** Session keypair for signless mode (from useSession) */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  sendTransaction: (tx: any, callbacks?: SendTxCallbacks) => Promise<any>;
-  signless: boolean;
-  gasless: boolean;
+  sessionPair?: any | null;
 }
 
+interface UseSendTransactionResult {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sendTransaction: (tx: any, callbacks?: SendTxCallbacks, options?: SendTxOptions) => Promise<any>;
+}
+
+// Timeout for wallet popup. If the extension doesn't respond, show an error
+// instead of hanging forever. SubWallet is known to go stale after dev restarts.
+const SIGN_TIMEOUT_MS = 15_000;
+
 /**
- * Unified transaction sender that handles voucher attachment and session signing.
- * Falls back to standard wallet signing when no voucher/session is available.
+ * Stateless transaction sender. Does NOT poll for vouchers or manage sessions.
+ * Voucher ID and session pair are passed in by the caller.
+ * When no options are passed, falls back to standard wallet signing.
  */
 export function useSendTransaction(): UseSendTransactionResult {
-  const { programId } = useChainApi();
   const { account, signer } = useWallet();
-
-  // Single voucher check for the wallet address (session voucher is checked in SessionPanel)
-  const walletVoucher = useVoucher(account?.address ?? null, programId || null);
-
-  // Session state (reads from localStorage, syncs via events)
-  const session = useSession(false);
-
-  // Check if session has a voucher by looking at SessionPanel's voucher state
-  // We pass null for programId when no session exists to avoid unnecessary polling
-  const sessionVoucher = useVoucher(
-    session.sessionAddress,
-    session.sessionAddress ? (programId || null) : null,
-  );
-
-  const isSignless = session.sessionPair !== null && sessionVoucher.hasVoucher;
-  const voucher = isSignless ? sessionVoucher : walletVoucher;
-
-  const txLock = useRef(false);
 
   const sendTransaction = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (tx: any, callbacks?: SendTxCallbacks) => {
-      if (isSignless) {
-        if (txLock.current) {
-          throw new Error("A signless transaction is already in progress");
-        }
-        txLock.current = true;
-      }
+    async (tx: any, callbacks?: SendTxCallbacks, options?: SendTxOptions) => {
+      const { voucherId, sessionPair } = options ?? {};
 
-      try {
-        // Set account and signer
-        if (isSignless && session.sessionPair) {
-          tx.withAccount(session.sessionPair);
-        } else if (account) {
-          // This is the same pattern that worked before signless was added:
-          // tx.withAccount(account.address, signer ? { signer } : undefined)
-          if (signer) {
-            tx.withAccount(account.address, { signer });
-          } else {
-            tx.withAccount(account.address);
-          }
+      // Set account and signer
+      if (sessionPair) {
+        tx.withAccount(sessionPair);
+      } else if (account) {
+        if (signer) {
+          tx.withAccount(account.address, { signer });
         } else {
-          throw new Error("No account available");
+          tx.withAccount(account.address);
         }
-
-        // Attach voucher if available
-        if (voucher.activeVoucherId) {
-          tx.withVoucher(voucher.activeVoucherId);
-        }
-
-        // Calculate gas (this does NOT trigger wallet popup)
-        await tx.calculateGas();
-        callbacks?.onSigning?.();
-
-        // Sign and send (this triggers wallet popup in non-signless mode)
-        const result = await tx.signAndSend();
-        callbacks?.onSubmitted?.();
-
-        return await result.response();
-      } catch (err) {
-        throw err;
-      } finally {
-        if (isSignless) {
-          txLock.current = false;
-        }
+      } else {
+        throw new Error("No account available");
       }
+
+      if (voucherId) {
+        tx.withVoucher(voucherId);
+      }
+
+      await tx.calculateGas();
+
+      // Sign and send. Timeout detects dead wallet extensions (e.g. SubWallet
+      // goes stale after repeated dev server restarts).
+      let timeoutId: ReturnType<typeof setTimeout>;
+      const result = await Promise.race([
+        tx.signAndSend().then((r: unknown) => {
+          clearTimeout(timeoutId);
+          return r;
+        }),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Wallet not responding. Try: disconnect wallet, reconnect, or restart the wallet extension.",
+                ),
+              ),
+            SIGN_TIMEOUT_MS,
+          );
+        }),
+      ]);
+
+      // Signing succeeded, now waiting for on-chain confirmation
+      callbacks?.onSigning?.();
+
+      return await result.response();
     },
-    [isSignless, session.sessionPair, account, signer, voucher.activeVoucherId],
+    [account, signer],
   );
 
-  return {
-    sendTransaction,
-    signless: isSignless,
-    gasless: voucher.hasVoucher,
-  };
+  return { sendTransaction };
 }

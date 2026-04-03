@@ -7,6 +7,7 @@ import { SessionPanel } from "@/components/SessionPanel";
 import { EventLog } from "@/components/EventLog";
 import { DebugPanel } from "@/components/DebugPanel";
 import { EventsProvider } from "@/providers/events-provider";
+import { SessionProvider } from "@/providers/session-provider";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -34,6 +35,7 @@ export function App() {
 
   return (
     <EventsProvider>
+      <SessionProvider>
       <div className="min-h-[100dvh] flex flex-col">
         <Header />
 
@@ -69,6 +71,7 @@ export function App() {
           </motion.div>
         </main>
       </div>
+    </SessionProvider>
     </EventsProvider>
   );
 }

@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useChainApi } from "@/providers/chain-provider";
 
-// Use a ref for blockNumber so it doesn't trigger re-fetches on every block
-// The effect only re-runs when api/address/programId change or on manual refresh
-
 interface VoucherDetails {
   owner: string;
   expiry: number;
@@ -20,11 +17,13 @@ interface UseVoucherResult {
   refresh: () => void;
 }
 
-const POLL_INTERVAL_MS = 12_000;
+// Longer interval to avoid saturating the RPC WebSocket connection.
+// Multiple useVoucher instances can be mounted simultaneously.
+const POLL_INTERVAL_MS = 30_000;
 
 /**
- * Polls for active vouchers for a given address and program.
- * Filters expired vouchers and picks the first valid one deterministically.
+ * Checks for active vouchers for a given address and program.
+ * Uses lightweight api.voucher.exists() first, only fetches details when needed.
  */
 export function useVoucher(
   address: string | null,
@@ -32,8 +31,10 @@ export function useVoucher(
 ): UseVoucherResult {
   const { api, apiStatus, blockNumber } = useChainApi();
   const [activeVoucherId, setActiveVoucherId] = useState<string | null>(null);
-  const [voucherDetails, setVoucherDetails] = useState<VoucherDetails | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [voucherDetails, setVoucherDetails] = useState<VoucherDetails | null>(
+    null,
+  );
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const refreshRef = useRef(0);
   const blockNumberRef = useRef(blockNumber);
@@ -41,11 +42,11 @@ export function useVoucher(
 
   const refresh = useCallback(() => {
     refreshRef.current += 1;
-    // Force re-run by updating a counter tracked in the effect deps
     setLoading(true);
   }, []);
 
   useEffect(() => {
+    // Skip entirely when inputs are missing
     if (!api || apiStatus !== "ready" || !address || !programId) {
       setActiveVoucherId(null);
       setVoucherDetails(null);
@@ -58,23 +59,33 @@ export function useVoucher(
 
     async function poll() {
       try {
-        const gearApi = api as unknown as {
-          voucher: {
-            getAllForAccount: (
-              accountId: string,
-              programId?: string,
-            ) => Promise<Record<string, VoucherDetails>>;
-          };
-        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const gearApi = api as any;
 
-        const vouchers = await gearApi.voucher.getAllForAccount(
-          address!,
-          programId! as `0x${string}`,
+        // Step 1: lightweight exists() check — single storage read
+        const exists: boolean = await gearApi.voucher.exists(
+          address,
+          programId as `0x${string}`,
         );
 
         if (cancelled) return;
 
-        // Filter expired vouchers and sort deterministically
+        if (!exists) {
+          setActiveVoucherId(null);
+          setVoucherDetails(null);
+          setError(null);
+          return;
+        }
+
+        // Step 2: only fetch full details when we know a voucher exists
+        const vouchers: Record<string, VoucherDetails> =
+          await gearApi.voucher.getAllForAccount(
+            address,
+            programId as `0x${string}`,
+          );
+
+        if (cancelled) return;
+
         const currentBlock = blockNumberRef.current ?? 0;
         const validEntries = Object.entries(vouchers)
           .filter(([, details]) => details.expiry > currentBlock)
@@ -110,7 +121,6 @@ export function useVoucher(
       cancelled = true;
       clearInterval(intervalId);
     };
-    // refreshRef.current triggers manual refresh. blockNumber excluded to avoid 3s re-polls.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, apiStatus, address, programId, refreshRef.current]);
 

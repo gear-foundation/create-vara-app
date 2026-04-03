@@ -1,25 +1,15 @@
 import { Lightning } from "@phosphor-icons/react";
-import { useVoucher } from "@/hooks/use-voucher";
-import { useChainApi, useWallet } from "@/providers/chain-provider";
+import { useSessionContext } from "@/providers/session-provider";
 import { blocksToHumanTime } from "@/lib/block-time";
 
 /**
- * Small pill badge showing "Gasless" when an active voucher exists.
- * Renders nothing while loading or when no voucher is available.
+ * Small pill badge showing "Gasless" when a session voucher is active.
+ * Reads from SessionProvider context (no extra polling).
  */
 export function VoucherBadge() {
-  const { programId, blockNumber } = useChainApi();
-  const { account } = useWallet();
-  const { hasVoucher, voucherDetails, loading } = useVoucher(
-    account?.address ?? null,
-    programId || null,
-  );
+  const { hasVoucher, remainingBlocks, isActive } = useSessionContext();
 
-  if (loading || !hasVoucher || !voucherDetails) return null;
-
-  const remainingBlocks = blockNumber
-    ? Math.max(0, voucherDetails.expiry - blockNumber)
-    : null;
+  if (!isActive || !hasVoucher) return null;
 
   return (
     <div
@@ -27,12 +17,12 @@ export function VoucherBadge() {
       aria-live="polite"
       title={
         remainingBlocks !== null
-          ? `Voucher active — ${remainingBlocks} blocks remaining`
-          : "Voucher active"
+          ? `Signless active — ${remainingBlocks} blocks remaining`
+          : "Signless active"
       }
     >
       <Lightning size={12} weight="fill" />
-      <span className="hidden sm:inline">Gasless</span>
+      <span className="hidden sm:inline">Signless</span>
       {remainingBlocks !== null && (
         <span className="hidden sm:inline text-emerald-400/60">
           {blocksToHumanTime(remainingBlocks)}

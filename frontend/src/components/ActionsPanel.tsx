@@ -8,29 +8,25 @@ import {
   CheckCircle, CircleNotch, Clock, PlusCircle, XCircle,
 } from "@phosphor-icons/react";
 import { useChainApi, useWallet } from "@/providers/chain-provider";
-import {
-  txHandlePing,
-  txIncrement,
-  txSchedulePing,
-  txSendMessage,
-  txSetGreeting,
-} from "@/lib/sails-client";
+import { initSails } from "@/lib/sails-client";
+import { useSendTransaction } from "@/hooks/use-send-transaction";
+import { useSessionContext } from "@/providers/session-provider";
 
 type TxPhase = "idle" | "signing" | "submitted" | "confirmed" | "error";
 
 function TxStatus({
-  phase, error, onDismiss,
+  phase, error, signless, onDismiss,
 }: {
-  phase: TxPhase; error: string | null; onDismiss?: () => void;
+  phase: TxPhase; error: string | null; signless?: boolean; onDismiss?: () => void;
 }) {
   return (
     <AnimatePresence mode="wait">
       {phase !== "idle" && (
         <motion.div key={phase} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ type: "spring" as const, stiffness: 200, damping: 25 }} className={`mt-2.5 ${phase === "error" ? "bg-red-500/5 border border-red-500/10 rounded-xl p-3" : "flex items-center gap-1.5"}`} role="status" aria-live="polite">
-          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" aria-hidden="true" /><span className="text-sm text-amber-400">Waiting for signature</span></>)}
+          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" aria-hidden="true" /><span className="text-sm text-amber-400">{signless ? "Auto-signing" : "Waiting for signature"}</span></>)}
           {phase === "submitted" && (<><CircleNotch size={14} className="animate-spin text-emerald-400" aria-hidden="true" /><span className="text-sm text-emerald-400">Processing</span></>)}
           {phase === "confirmed" && (<><CheckCircle size={14} weight="fill" className="text-emerald-400" aria-hidden="true" /><span className="text-sm text-emerald-400">Confirmed</span></>)}
-          {phase === "error" && (<div className="flex items-start gap-2"><XCircle size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" aria-hidden="true" /><span className="text-sm text-red-400 flex-1">{error}</span>{onDismiss && (<button onClick={onDismiss} aria-label="Dismiss error" className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-red-400/50 rounded"><XCircle size={14} weight="bold" aria-hidden="true" /></button>)}</div>)}
+          {phase === "error" && (<div className="flex items-start gap-2"><XCircle size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" aria-hidden="true" /><span className="text-sm text-red-400 flex-1 break-all line-clamp-3">{error}</span>{onDismiss && (<button onClick={onDismiss} aria-label="Dismiss error" className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-red-400/50 rounded"><XCircle size={14} weight="bold" aria-hidden="true" /></button>)}</div>)}
         </motion.div>
       )}
     </AnimatePresence>
@@ -39,7 +35,11 @@ function TxStatus({
 
 export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
   const { api, apiStatus, programId } = useChainApi();
-  const { account, signer, walletStatus } = useWallet();
+  const { account, walletStatus } = useWallet();
+  const { sendTransaction } = useSendTransaction();
+  const session = useSessionContext();
+  const signless = session.isActive;
+  const txOptions = signless ? { sessionPair: session.sessionPair, voucherId: session.voucherId } : undefined;
   const disabled = !api || apiStatus !== "ready" || walletStatus !== "connected" || !account;
 
   // HandlePing
@@ -70,9 +70,12 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setHandlePingPhase("signing");
     setHandlePingError(null);
     try {
-      await txHandlePing(api, programId, account.address, signer, {
-        onSubmitted: () => setHandlePingPhase("submitted"),
-      });
+      const sails = await initSails(api, programId);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.HandlePing();
+      await sendTransaction(tx, {
+        onSigning: () => setHandlePingPhase("submitted"),
+      }, txOptions);
       setHandlePingPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setHandlePingPhase("idle"), 3000);
@@ -87,9 +90,12 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setIncrementPhase("signing");
     setIncrementError(null);
     try {
-      await txIncrement(api, programId, account.address, signer, {
-        onSubmitted: () => setIncrementPhase("submitted"),
-      });
+      const sails = await initSails(api, programId);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.Increment();
+      await sendTransaction(tx, {
+        onSigning: () => setIncrementPhase("submitted"),
+      }, txOptions);
       setIncrementPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setIncrementPhase("idle"), 3000);
@@ -109,9 +115,12 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setSchedulePingPhase("signing");
     setSchedulePingError(null);
     try {
-      await txSchedulePing(api, programId, account.address, schDelay, signer, {
-        onSubmitted: () => setSchedulePingPhase("submitted"),
-      });
+      const sails = await initSails(api, programId);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.SchedulePing(schDelay);
+      await sendTransaction(tx, {
+        onSigning: () => setSchedulePingPhase("submitted"),
+      }, txOptions);
       setSchedulePingPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setSchedulePingPhase("idle"), 3000);
@@ -131,9 +140,12 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setSendMessagePhase("signing");
     setSendMessageError(null);
     try {
-      await txSendMessage(api, programId, account.address, senText, signer, {
-        onSubmitted: () => setSendMessagePhase("submitted"),
-      });
+      const sails = await initSails(api, programId);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.SendMessage(senText);
+      await sendTransaction(tx, {
+        onSigning: () => setSendMessagePhase("submitted"),
+      }, txOptions);
       setSendMessagePhase("confirmed");
       onTxSuccess();
       setTimeout(() => setSendMessagePhase("idle"), 3000);
@@ -153,9 +165,12 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setSetGreetingPhase("signing");
     setSetGreetingError(null);
     try {
-      await txSetGreeting(api, programId, account.address, setGreeting, signer, {
-        onSubmitted: () => setSetGreetingPhase("submitted"),
-      });
+      const sails = await initSails(api, programId);
+      const service = sails?.services?.Demo ?? sails?.services?.demo;
+      const tx = service.functions.SetGreeting(setGreeting);
+      await sendTransaction(tx, {
+        onSigning: () => setSetGreetingPhase("submitted"),
+      }, txOptions);
       setSetGreetingPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setSetGreetingPhase("idle"), 3000);
@@ -188,7 +203,7 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
             <Clock size={16} weight="bold" aria-hidden="true" />
             HandlePing
           </button>
-          <TxStatus phase={hanPhase} error={hanError} onDismiss={() => { setHandlePingPhase("idle"); setHandlePingError(null); }} />
+          <TxStatus phase={hanPhase} error={hanError} signless={signless} onDismiss={() => { setHandlePingPhase("idle"); setHandlePingError(null); }} />
         </div>
         {/* Increment */}
         <div className="py-5">
@@ -200,7 +215,7 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
             <PlusCircle size={16} weight="bold" aria-hidden="true" />
             Increment
           </button>
-          <TxStatus phase={incPhase} error={incError} onDismiss={() => { setIncrementPhase("idle"); setIncrementError(null); }} />
+          <TxStatus phase={incPhase} error={incError} signless={signless} onDismiss={() => { setIncrementPhase("idle"); setIncrementError(null); }} />
         </div>
         {/* SchedulePing */}
         <div className="py-5">
@@ -209,7 +224,7 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
             <input id="scheduleping-delay" type="number" autoComplete="off" value={schDelay} onChange={(e) => setSchedulePingDelay(Number(e.target.value))} className="w-24 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors" />
             <button onClick={handleSchedulePing} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors disabled:opacity-30 active:scale-[0.97] ml-auto focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">SchedulePing</button>
           </div>
-          <TxStatus phase={schPhase} error={schError} onDismiss={() => { setSchedulePingPhase("idle"); setSchedulePingError(null); }} />
+          <TxStatus phase={schPhase} error={schError} signless={signless} onDismiss={() => { setSchedulePingPhase("idle"); setSchedulePingError(null); }} />
         </div>
         {/* SendMessage */}
         <div className="py-5">
@@ -221,7 +236,7 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
             </div>
             <button onClick={handleSendMessage} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors disabled:opacity-30 active:scale-[0.97] ml-auto focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">SendMessage</button>
           </div>
-          <TxStatus phase={senPhase} error={senError} onDismiss={() => { setSendMessagePhase("idle"); setSendMessageError(null); }} />
+          <TxStatus phase={senPhase} error={senError} signless={signless} onDismiss={() => { setSendMessagePhase("idle"); setSendMessageError(null); }} />
         </div>
         {/* SetGreeting */}
         <div className="pt-5">
@@ -233,7 +248,7 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
             </div>
             <button onClick={handleSetGreeting} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors disabled:opacity-30 active:scale-[0.97] ml-auto focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">SetGreeting</button>
           </div>
-          <TxStatus phase={setPhase} error={setError} onDismiss={() => { setSetGreetingPhase("idle"); setSetGreetingError(null); }} />
+          <TxStatus phase={setPhase} error={setError} signless={signless} onDismiss={() => { setSetGreetingPhase("idle"); setSetGreetingError(null); }} />
         </div>
       </div>
     </div>
