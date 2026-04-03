@@ -6,6 +6,7 @@ import {
   Check,
   Warning,
   XCircle,
+  CircleNotch,
   CaretDown,
   CaretUp,
 } from "@phosphor-icons/react";
@@ -26,10 +27,14 @@ function truncateAddress(addr: string): string {
  * States: no session, awaiting voucher, active, expired, error.
  */
 export function SessionPanel() {
-  const { programId, blockNumber } = useChainApi();
-  const { account } = useWallet();
+  const { api, apiStatus, programId, blockNumber } = useChainApi();
+  const { account, signer } = useWallet();
   const [collapsed, setCollapsed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [fundingPhase, setFundingPhase] = useState<
+    "idle" | "signing" | "submitted" | "done" | "error"
+  >("idle");
+  const [fundingError, setFundingError] = useState<string | null>(null);
 
   // Check voucher for session address (or null if no session)
   const [sessionAddr, setSessionAddr] = useState<string | null>(null);
@@ -70,6 +75,41 @@ export function SessionPanel() {
     await navigator.clipboard.writeText(session.sessionAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleFundSession() {
+    if (!api || apiStatus !== "ready" || !account || !signer || !session.sessionAddress || !programId) return;
+    setFundingPhase("signing");
+    setFundingError(null);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const gearApi = api as any;
+      // Use the high-level voucher.issue() which handles param ordering
+      const { extrinsic } = await gearApi.voucher.issue(
+        session.sessionAddress,
+        5_000_000_000_000n, // 5 VARA
+        3600,               // duration in blocks (~3h)
+        [programId],        // programs whitelist
+      );
+      // Sign and send the voucher issue extrinsic
+      await new Promise<void>((resolve, reject) => {
+        extrinsic.signAndSend(
+          account.address,
+          { signer },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ({ status }: any) => {
+            if (status.isBroadcast) setFundingPhase("submitted");
+            if (status.isInBlock || status.isFinalized) resolve();
+            if (status.isInvalid || status.isDropped) reject(new Error("Transaction failed"));
+          },
+        ).catch((err: unknown) => reject(err));
+      });
+      sessionVoucher.refresh();
+      setFundingPhase("done");
+    } catch (err) {
+      setFundingPhase("error");
+      setFundingError(err instanceof Error ? err.message : "Failed to fund session");
+    }
   }
 
   if (!account) return null;
@@ -129,11 +169,38 @@ export function SessionPanel() {
 
               {/* Awaiting voucher */}
               {state === "awaiting" && session.sessionAddress && (
-                <div className="space-y-2">
-                  <p className="text-xs text-zinc-500">
-                    Issue a voucher to this session address to activate signless
-                    mode:
-                  </p>
+                <div className="space-y-3">
+                  {fundingPhase === "idle" || fundingPhase === "error" ? (
+                    <>
+                      <button
+                        onClick={handleFundSession}
+                        disabled={!api || apiStatus !== "ready" || !programId}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600/80 text-emerald-50 text-sm font-medium hover:bg-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97]"
+                      >
+                        <Lightning size={14} weight="fill" />
+                        Fund Session (5 VARA)
+                      </button>
+                      <p className="text-[10px] text-zinc-600 text-center">
+                        Sponsors ~100 transactions for ~3 hours
+                      </p>
+                      {fundingPhase === "error" && fundingError && (
+                        <div className="flex items-start gap-2 bg-red-500/5 border border-red-500/10 rounded-xl p-2">
+                          <XCircle size={14} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" />
+                          <span className="text-xs text-red-400">{fundingError}</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-1.5 py-2">
+                      <CircleNotch
+                        size={14}
+                        className={`animate-spin ${fundingPhase === "signing" ? "text-amber-400" : "text-emerald-400"}`}
+                      />
+                      <span className={`text-sm ${fundingPhase === "signing" ? "text-amber-400" : "text-emerald-400"}`}>
+                        {fundingPhase === "signing" ? "Waiting for signature" : "Confirming on-chain"}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 bg-zinc-950 rounded-xl px-3 py-2">
                     <code className="text-xs text-zinc-300 font-mono flex-1 truncate">
                       {truncateAddress(session.sessionAddress)}
@@ -151,12 +218,12 @@ export function SessionPanel() {
                     </button>
                   </div>
                   <p className="text-[10px] text-zinc-600">
-                    For production apps, connect a backend sponsor service to
-                    auto-issue vouchers.
+                    Or fund externally by issuing a voucher to this address.
                   </p>
                   <button
                     onClick={handleEndSession}
-                    className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                    disabled={fundingPhase === "signing" || fundingPhase === "submitted"}
+                    className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-30"
                   >
                     Cancel
                   </button>
