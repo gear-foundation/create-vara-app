@@ -104,6 +104,9 @@ replaceInFile(resolve(projectDir, "frontend/index.html"), [
 replaceInFile(resolve(projectDir, "frontend/src/providers/chain-provider.tsx"), [
   ["vara-starter.", `${projectName}.`],
 ]);
+replaceInFile(resolve(projectDir, "frontend/src/hooks/use-session.ts"), [
+  ["vara-starter.", `${projectName}.`],
+]);
 
 // --- Install dependencies ---
 

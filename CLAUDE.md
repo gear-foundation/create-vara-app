@@ -19,9 +19,14 @@ vara-ai-starter/
 │   │   ├── lib/wallet.ts           # Wallet detection via window.injectedWeb3
 │   │   ├── lib/sails-client.ts     # GENERATED: typed query/tx wrappers
 │   │   ├── lib/idl-introspect.ts   # Runtime IDL metadata for DebugPanel
+│   │   ├── hooks/use-voucher.ts    # Voucher polling + expiry filtering
+│   │   ├── hooks/use-session.ts    # Signless session keypair management
+│   │   ├── hooks/use-send-transaction.ts  # Unified tx sender (voucher + session)
 │   │   ├── providers/chain-provider.tsx  # API + wallet context
 │   │   ├── components/ActionsPanel.tsx   # GENERATED: command UI
 │   │   ├── components/StatePanel.tsx     # GENERATED: query UI
+│   │   ├── components/VoucherBadge.tsx   # Header pill: "Gasless" when voucher active
+│   │   ├── components/SessionPanel.tsx   # Signless session lifecycle UI
 │   │   ├── components/             # Shared UI components
 │   │   └── assets/demo.idl         # Bundled IDL for frontend
 │   └── .env.example
@@ -165,6 +170,33 @@ pub enum MyEvents { ... }
 let payload = ["ServiceName".encode(), "MethodName".encode()].concat();
 msg::send_bytes_with_gas_delayed(exec::program_id(), payload, gas, 0, delay_blocks);
 ```
+
+## Voucher Support (Gasless Transactions)
+
+The template supports voucher-backed gasless transactions. When a voucher exists for the connected account and target program, transactions use `tx.withVoucher(id)` so the user doesn't pay gas.
+
+**How it works:**
+- `useVoucher(address, programId)` polls `api.voucher.getAllForAccount()` every 12s, filters expired vouchers
+- `useSendTransaction()` automatically attaches the active voucher to every transaction
+- `VoucherBadge` in the Header shows "Gasless" when a voucher is active
+- If a voucher expires mid-transaction, the hook retries without voucher (user pays gas)
+
+**To test:** Issue a voucher to your account for the deployed program using `vara-skills:vara-wallet`, then transactions will use the voucher automatically.
+
+## Signless Sessions
+
+The template supports signless sessions where the user signs once and subsequent transactions auto-sign with a temporary session key (no wallet popups).
+
+**How it works:**
+- `useSession()` generates a temporary keypair via `GearKeyring.create()`, stores mnemonic in localStorage
+- When a voucher is issued to the session address, the session activates
+- `useSendTransaction()` switches to the session keypair for signing (instant, no popup)
+- `SessionPanel` shows the session lifecycle: create -> awaiting voucher -> active -> expired
+
+**Known limitations:**
+- Session keys create a different on-chain identity (`msg::source()` is the session address)
+- Mnemonic in localStorage is an XSS risk (acceptable for starter, encrypt in production)
+- Vouchers must be issued externally (no built-in sponsor service)
 
 ## Environment Variables
 
