@@ -4,72 +4,88 @@
 // Custom helpers should go in a separate file (e.g., sails-helpers.ts)
 
 import type { GearApi } from "@gear-js/api";
+import type { SailsProgram } from "sails-js";
+import type { SignerOptions } from "@polkadot/api/types";
 import idlRaw from "@/assets/demo.idl?raw";
 
-let cachedSails: Promise<unknown> | null = null;
-let cachedApi: GearApi | null = null;
+// -- Types from IDL --
 
-export async function initSails(api: GearApi) {
-  // Invalidate cache if api instance changed (fixes stale connection after reconnect)
-  if (cachedSails && cachedApi !== api) {
-    cachedSails = null;
+export interface StateView {
+  counter: string;
+  last_caller: string | null;
+  ping_count: string;
+  message_count: number;
+  greeting: string;
+}
+
+export interface StoredMessage {
+  sender: string;
+  text: string;
+  block_height: number;
+}
+
+const sailsCache = new WeakMap<GearApi, Map<string, Promise<SailsProgram>>>();
+
+export async function initSails(api: GearApi, programId?: string): Promise<SailsProgram> {
+  const key = programId || "";
+  let apiCache = sailsCache.get(api);
+  if (!apiCache) {
+    apiCache = new Map();
+    sailsCache.set(api, apiCache);
   }
-  if (!cachedSails) {
-    cachedApi = api;
-    cachedSails = (async () => {
-      const [{ Sails }, { SailsIdlParser }] = await Promise.all([
+  let cached = apiCache.get(key);
+  if (!cached) {
+    cached = (async () => {
+      const [{ SailsProgram }, { SailsIdlParser }] = await Promise.all([
         import("sails-js"),
-        import("sails-js-parser"),
+        import("sails-js/parser"),
       ]);
-      const parser = await SailsIdlParser.new();
-      const sails = new Sails(parser);
+      const parser = new SailsIdlParser();
+      await parser.init();
+      const sails = new SailsProgram(parser.parse(idlRaw));
       sails.setApi(api);
-      sails.parseIdl(idlRaw);
-
-      const programId = import.meta.env.VITE_PROGRAM_ID;
-      if (programId) {
-        sails.setProgramId(programId as `0x${string}`);
-      }
-
+      if (programId) sails.setProgramId(programId as `0x${string}`);
       return sails;
     })().catch((err) => {
-      cachedSails = null;
-      cachedApi = null;
+      apiCache?.delete(key);
       throw err;
     });
+    apiCache.set(key, cached);
   }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return cachedSails as Promise<any>;
+  return cached;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getService(sails: any): any {
-  return sails?.services?.Demo ?? sails?.services?.demo;
+function getService(sails: SailsProgram) {
+  return sails.services.Demo ?? sails.services.demo;
 }
+
+export const PROGRAM_PROBE = {
+  serviceName: "Demo",
+  queryName: "GetCounter",
+} as const;
 
 // -- Queries --
 
-export async function queryCounter(api: GearApi): Promise<string> {
-  const sails = await initSails(api);
+export async function queryCounter(api: GearApi, programId?: string): Promise<string> {
+  const sails = await initSails(api, programId);
   const service = getService(sails);
   return service.queries.GetCounter().call();
 }
 
-export async function queryGreeting(api: GearApi): Promise<string> {
-  const sails = await initSails(api);
+export async function queryGreeting(api: GearApi, programId?: string): Promise<string> {
+  const sails = await initSails(api, programId);
   const service = getService(sails);
   return service.queries.GetGreeting().call();
 }
 
-export async function queryMessages(api: GearApi): Promise<unknown[]> {
-  const sails = await initSails(api);
+export async function queryMessages(api: GearApi, programId?: string): Promise<StoredMessage[]> {
+  const sails = await initSails(api, programId);
   const service = getService(sails);
   return service.queries.GetMessages().call();
 }
 
-export async function queryState(api: GearApi): Promise<unknown> {
-  const sails = await initSails(api);
+export async function queryState(api: GearApi, programId?: string): Promise<StateView> {
+  const sails = await initSails(api, programId);
   const service = getService(sails);
   return service.queries.GetState().call();
 }
@@ -78,79 +94,94 @@ export async function queryState(api: GearApi): Promise<unknown> {
 
 export async function txHandlePing(
   api: GearApi,
+  programId: string,
   account: string,
-  signer?: unknown
+  signer?: unknown,
+  options?: { onSubmitted?: () => void },
 ): Promise<null> {
-  const sails = await initSails(api);
+  const sails = await initSails(api, programId);
   const service = getService(sails);
   const tx = service.functions.HandlePing();
   const result = await tx
-    .withAccount(account, signer ? { signer } : undefined)
+    .withAccount(account, signer ? { signer } as Partial<SignerOptions> : undefined)
     .calculateGas()
     .then(() => tx.signAndSend());
+  options?.onSubmitted?.();
   return result.response();
 }
 
 export async function txIncrement(
   api: GearApi,
+  programId: string,
   account: string,
-  signer?: unknown
+  signer?: unknown,
+  options?: { onSubmitted?: () => void },
 ): Promise<string> {
-  const sails = await initSails(api);
+  const sails = await initSails(api, programId);
   const service = getService(sails);
   const tx = service.functions.Increment();
   const result = await tx
-    .withAccount(account, signer ? { signer } : undefined)
+    .withAccount(account, signer ? { signer } as Partial<SignerOptions> : undefined)
     .calculateGas()
     .then(() => tx.signAndSend());
+  options?.onSubmitted?.();
   return result.response();
 }
 
 export async function txSchedulePing(
   api: GearApi,
+  programId: string,
   account: string,
   delay: number,
-  signer?: unknown
+  signer?: unknown,
+  options?: { onSubmitted?: () => void },
 ): Promise<null> {
-  const sails = await initSails(api);
+  const sails = await initSails(api, programId);
   const service = getService(sails);
   const tx = service.functions.SchedulePing(delay);
   const result = await tx
-    .withAccount(account, signer ? { signer } : undefined)
+    .withAccount(account, signer ? { signer } as Partial<SignerOptions> : undefined)
     .calculateGas()
     .then(() => tx.signAndSend());
+  options?.onSubmitted?.();
   return result.response();
 }
 
 export async function txSendMessage(
   api: GearApi,
+  programId: string,
   account: string,
   text: string,
-  signer?: unknown
+  signer?: unknown,
+  options?: { onSubmitted?: () => void },
 ): Promise<string> {
-  const sails = await initSails(api);
+  const sails = await initSails(api, programId);
   const service = getService(sails);
   const tx = service.functions.SendMessage(text);
   const result = await tx
-    .withAccount(account, signer ? { signer } : undefined)
+    .withAccount(account, signer ? { signer } as Partial<SignerOptions> : undefined)
     .calculateGas()
     .then(() => tx.signAndSend());
+  options?.onSubmitted?.();
   return result.response();
 }
 
 export async function txSetGreeting(
   api: GearApi,
+  programId: string,
   account: string,
   greeting: string,
-  signer?: unknown
+  signer?: unknown,
+  options?: { onSubmitted?: () => void },
 ): Promise<string> {
-  const sails = await initSails(api);
+  const sails = await initSails(api, programId);
   const service = getService(sails);
   const tx = service.functions.SetGreeting(greeting);
   const result = await tx
-    .withAccount(account, signer ? { signer } : undefined)
+    .withAccount(account, signer ? { signer } as Partial<SignerOptions> : undefined)
     .calculateGas()
     .then(() => tx.signAndSend());
+  options?.onSubmitted?.();
   return result.response();
 }
 

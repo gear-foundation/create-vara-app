@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
+import demoIdlText from "../assets/demo.idl?raw";
+import sourceScaffoldClient from "../../../scripts/scaffold-client.ts?raw";
+import sourceScaffoldTypes from "../../../scripts/scaffold-types.ts?raw";
+import templateScaffoldClient from "../../../create-vara-app/template/scripts/scaffold-client.ts?raw";
+import templateScaffoldTypes from "../../../create-vara-app/template/scripts/scaffold-types.ts?raw";
 import {
+  adaptIdlV2,
   getTsType,
   primToTs,
   methodIcon,
@@ -8,6 +14,18 @@ import {
   isHexType,
   defaultValueStr,
 } from "../../../scripts/scaffold-types";
+
+async function parseSailsIdl(idlText: string) {
+  const { SailsIdlParser } = await import("sails-js/parser");
+  const parser = new SailsIdlParser();
+  await parser.init();
+  try {
+    return adaptIdlV2(parser.parse(idlText));
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`IDL v2 required: ${detail}`);
+  }
+}
 
 // --- Mock type def builders ---
 
@@ -286,5 +304,54 @@ describe("defaultValueStr", () => {
     expect(defaultValueStr("u32")).toBe("0");
     expect(defaultValueStr("u64")).toBe('"0"');
     expect(defaultValueStr("actor_id")).toBe('""');
+  });
+});
+
+describe("IDL v2 adapter", () => {
+  it("parses the real demo IDL with sails-js/parser", async () => {
+    const program = await parseSailsIdl(demoIdlText);
+    const demo = program.services[0];
+
+    expect(demo.name).toBe("Demo");
+    expect(demo.funcs.some((func) => func.name === "GetState" && func.isQuery)).toBe(true);
+    expect(program.getTypeByName("StateView")?.def.isStruct).toBe(true);
+  });
+
+  it("adapts a custom IDL v2 fixture with a non-demo filename shape", async () => {
+    const idlText = `
+      !@sails: 1.0.0
+
+      service CustomStore {
+        functions {
+          @query
+          GetOwner() -> ActorId;
+          SetValue(value: u32);
+        }
+      }
+
+      program CustomClient {
+        constructors {
+          Create();
+        }
+        services {
+          CustomStore,
+        }
+      }
+    `;
+
+    const program = await parseSailsIdl(idlText);
+    expect(program.services[0].name).toBe("CustomStore");
+    expect(program.services[0].funcs.map((func) => func.name)).toEqual(["GetOwner", "SetValue"]);
+    expect(program.services[0].funcs[0].params).toEqual([]);
+  });
+
+  it("rejects legacy IDL v1 with a migration error", async () => {
+    await expect(parseSailsIdl("constructor { Create : (); }; service Demo { Ping : (); };"))
+      .rejects.toThrow(/IDL v2 required/);
+  });
+
+  it("keeps template scaffold scripts in sync with source scripts", () => {
+    expect(templateScaffoldClient).toBe(sourceScaffoldClient);
+    expect(templateScaffoldTypes).toBe(sourceScaffoldTypes);
   });
 });

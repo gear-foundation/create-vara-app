@@ -1,9 +1,10 @@
-use demo_client::{demo::Demo, DemoClient, DemoClientCtors};
+use demo_client::{DemoClient, DemoClientCtors, demo::Demo};
 use sails_rs::client::*;
 
 const ADMIN_ID: u64 = 10;
+type DemoActor = sails_rs::client::Actor<demo_client::DemoClientProgram, GtestEnv>;
 
-async fn setup() -> sails_rs::client::Actor<demo_client::DemoClientProgram, GtestEnv> {
+async fn setup() -> (DemoActor, GtestEnv) {
     let system = sails_rs::gtest::System::new();
     system.init_logger();
     system.mint_to(ADMIN_ID, 1_000_000_000_000_000);
@@ -12,7 +13,8 @@ async fn setup() -> sails_rs::client::Actor<demo_client::DemoClientProgram, Gtes
     let env = GtestEnv::new(system, ADMIN_ID.into());
 
     let deployment = env.deploy::<demo_client::DemoClientProgram>(code_id, b"salt".to_vec());
-    deployment.create().await.unwrap()
+    let actor = deployment.create().await.unwrap();
+    (actor, env)
 }
 
 // ---------------------------------------------------------------------------
@@ -21,7 +23,7 @@ async fn setup() -> sails_rs::client::Actor<demo_client::DemoClientProgram, Gtes
 
 #[tokio::test]
 async fn test_increment() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     let result = demo.increment().await.unwrap();
@@ -33,7 +35,7 @@ async fn test_increment() {
 
 #[tokio::test]
 async fn test_send_message() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     let result = demo.send_message("Hello Vara!".to_string()).await.unwrap();
@@ -42,7 +44,7 @@ async fn test_send_message() {
 
 #[tokio::test]
 async fn test_get_state() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     let _result: u64 = demo.increment().await.unwrap();
@@ -57,7 +59,7 @@ async fn test_get_state() {
 
 #[tokio::test]
 async fn test_get_counter() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     let _: u64 = demo.increment().await.unwrap();
@@ -70,7 +72,7 @@ async fn test_get_counter() {
 
 #[tokio::test]
 async fn test_get_messages() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     let _: String = demo.send_message("msg1".to_string()).await.unwrap();
@@ -88,7 +90,7 @@ async fn test_get_messages() {
 
 #[tokio::test]
 async fn test_send_empty_message_fails() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     let result = demo.send_message("".to_string()).await;
@@ -97,7 +99,7 @@ async fn test_send_empty_message_fails() {
 
 #[tokio::test]
 async fn test_send_long_message_fails() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     let long_msg = "x".repeat(300);
@@ -107,7 +109,7 @@ async fn test_send_long_message_fails() {
 
 #[tokio::test]
 async fn test_handle_ping_from_external_fails() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     let result = demo.handle_ping().await;
@@ -120,7 +122,7 @@ async fn test_handle_ping_from_external_fails() {
 
 #[tokio::test]
 async fn test_messages_ring_buffer() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     for i in 0..110 {
@@ -133,13 +135,27 @@ async fn test_messages_ring_buffer() {
     assert_eq!(messages[99].text, "msg_109");
 }
 
+#[tokio::test]
+async fn test_schedule_ping_executes_delayed_self_call() {
+    let (actor, env) = setup().await;
+    let mut demo = actor.demo();
+
+    demo.schedule_ping(2).await.unwrap();
+    env.run_next_block();
+    env.run_next_block();
+    env.run_next_block();
+
+    let state = demo.get_state().query().unwrap();
+    assert_eq!(state.ping_count, 1);
+}
+
 // ---------------------------------------------------------------------------
 // Sequencing Test
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn test_sequencing() {
-    let actor = setup().await;
+    let (actor, _env) = setup().await;
     let mut demo = actor.demo();
 
     let _: u64 = demo.increment().await.unwrap();

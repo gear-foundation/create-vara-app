@@ -63,13 +63,6 @@ if (idlPath) {
   console.log(`  IDL: demo.idl (built-in demo contract)`);
 }
 
-// --- Extract service name from IDL ---
-
-const idlText = readFileSync(resolve(frontendAssetsDir, idlFilename), "utf-8");
-const serviceMatch = idlText.match(/^service\s+(\w+)\s*\{/m);
-const serviceName = serviceMatch ? serviceMatch[1] : "Demo";
-console.log(`  Service: ${serviceName}`);
-
 // --- Template replacements ---
 
 function replaceInFile(filePath, replacements) {
@@ -80,20 +73,6 @@ function replaceInFile(filePath, replacements) {
   }
   writeFileSync(filePath, content);
 }
-
-// Update IDL import path if not demo.idl
-if (idlFilename !== "demo.idl") {
-  replaceInFile(resolve(projectDir, "scripts/scaffold-client.ts"), [
-    ["demo.idl", idlFilename],
-  ]);
-}
-
-// Update NetworkSelector service name probe
-replaceInFile(resolve(projectDir, "frontend/src/components/NetworkSelector.tsx"), [
-  ["probeSails.services?.Demo", `probeSails.services?.${serviceName}`],
-  [`probeSails.services?.demo`, `probeSails.services?.${serviceName.toLowerCase()}`],
-  ["this demo program", "this program"],
-]);
 
 // Update page title
 replaceInFile(resolve(projectDir, "frontend/index.html"), [
@@ -109,13 +88,13 @@ replaceInFile(resolve(projectDir, "frontend/src/providers/chain-provider.tsx"), 
 
 console.log(`\n  Installing dependencies...\n`);
 try {
-  execSync("npm install --legacy-peer-deps", {
+  execSync("npm install", {
     cwd: resolve(projectDir, "frontend"),
     stdio: "inherit",
   });
 } catch {
   console.error("\n  npm install failed. You can retry manually:");
-  console.error(`  cd ${projectName}/frontend && npm install --legacy-peer-deps\n`);
+  console.error(`  cd ${projectName}/frontend && npm install\n`);
 }
 
 // --- Run scaffold ---

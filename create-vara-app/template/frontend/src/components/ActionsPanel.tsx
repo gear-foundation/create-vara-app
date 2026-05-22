@@ -8,7 +8,13 @@ import {
   CheckCircle, CircleNotch, Clock, PlusCircle, XCircle,
 } from "@phosphor-icons/react";
 import { useChainApi, useWallet } from "@/providers/chain-provider";
-import { initSails } from "@/lib/sails-client";
+import {
+  txHandlePing,
+  txIncrement,
+  txSchedulePing,
+  txSendMessage,
+  txSetGreeting,
+} from "@/lib/sails-client";
 
 type TxPhase = "idle" | "signing" | "submitted" | "confirmed" | "error";
 
@@ -20,11 +26,11 @@ function TxStatus({
   return (
     <AnimatePresence mode="wait">
       {phase !== "idle" && (
-        <motion.div key={phase} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ type: "spring" as const, stiffness: 200, damping: 25 }} className={`mt-2.5 ${phase === "error" ? "bg-red-500/5 border border-red-500/10 rounded-xl p-3" : "flex items-center gap-1.5"}`}>
-          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" /><span className="text-sm text-amber-400">Waiting for signature</span></>)}
-          {phase === "submitted" && (<><CircleNotch size={14} className="animate-spin text-emerald-400" /><span className="text-sm text-emerald-400">Processing</span></>)}
-          {phase === "confirmed" && (<><CheckCircle size={14} weight="fill" className="text-emerald-400" /><span className="text-sm text-emerald-400">Confirmed</span></>)}
-          {phase === "error" && (<div className="flex items-start gap-2"><XCircle size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" /><span className="text-sm text-red-400 flex-1">{error}</span>{onDismiss && (<button onClick={onDismiss} className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0"><XCircle size={14} weight="bold" /></button>)}</div>)}
+        <motion.div key={phase} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ type: "spring" as const, stiffness: 200, damping: 25 }} className={`mt-2.5 ${phase === "error" ? "bg-red-500/5 border border-red-500/10 rounded-xl p-3" : "flex items-center gap-1.5"}`} role="status" aria-live="polite">
+          {phase === "signing" && (<><CircleNotch size={14} className="animate-spin text-amber-400" aria-hidden="true" /><span className="text-sm text-amber-400">Waiting for signature</span></>)}
+          {phase === "submitted" && (<><CircleNotch size={14} className="animate-spin text-emerald-400" aria-hidden="true" /><span className="text-sm text-emerald-400">Processing</span></>)}
+          {phase === "confirmed" && (<><CheckCircle size={14} weight="fill" className="text-emerald-400" aria-hidden="true" /><span className="text-sm text-emerald-400">Confirmed</span></>)}
+          {phase === "error" && (<div className="flex items-start gap-2"><XCircle size={16} weight="fill" className="text-red-400 mt-0.5 flex-shrink-0" aria-hidden="true" /><span className="text-sm text-red-400 flex-1">{error}</span>{onDismiss && (<button onClick={onDismiss} aria-label="Dismiss error" className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-red-400/50 rounded"><XCircle size={14} weight="bold" aria-hidden="true" /></button>)}</div>)}
         </motion.div>
       )}
     </AnimatePresence>
@@ -32,7 +38,7 @@ function TxStatus({
 }
 
 export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
-  const { api, apiStatus } = useChainApi();
+  const { api, apiStatus, programId } = useChainApi();
   const { account, signer, walletStatus } = useWallet();
   const disabled = !api || apiStatus !== "ready" || walletStatus !== "connected" || !account;
 
@@ -64,14 +70,9 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setHandlePingPhase("signing");
     setHandlePingError(null);
     try {
-      const sails = await initSails(api);
-      const service = sails?.services?.Demo ?? sails?.services?.demo;
-      const tx = service.functions.HandlePing();
-      tx.withAccount(account.address, signer ? { signer } : undefined);
-      await tx.calculateGas();
-      setHandlePingPhase("submitted");
-      const result = await tx.signAndSend();
-      await result.response();
+      await txHandlePing(api, programId, account.address, signer, {
+        onSubmitted: () => setHandlePingPhase("submitted"),
+      });
       setHandlePingPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setHandlePingPhase("idle"), 3000);
@@ -86,14 +87,9 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setIncrementPhase("signing");
     setIncrementError(null);
     try {
-      const sails = await initSails(api);
-      const service = sails?.services?.Demo ?? sails?.services?.demo;
-      const tx = service.functions.Increment();
-      tx.withAccount(account.address, signer ? { signer } : undefined);
-      await tx.calculateGas();
-      setIncrementPhase("submitted");
-      const result = await tx.signAndSend();
-      await result.response();
+      await txIncrement(api, programId, account.address, signer, {
+        onSubmitted: () => setIncrementPhase("submitted"),
+      });
       setIncrementPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setIncrementPhase("idle"), 3000);
@@ -113,14 +109,9 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setSchedulePingPhase("signing");
     setSchedulePingError(null);
     try {
-      const sails = await initSails(api);
-      const service = sails?.services?.Demo ?? sails?.services?.demo;
-      const tx = service.functions.SchedulePing(schDelay);
-      tx.withAccount(account.address, signer ? { signer } : undefined);
-      await tx.calculateGas();
-      setSchedulePingPhase("submitted");
-      const result = await tx.signAndSend();
-      await result.response();
+      await txSchedulePing(api, programId, account.address, schDelay, signer, {
+        onSubmitted: () => setSchedulePingPhase("submitted"),
+      });
       setSchedulePingPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setSchedulePingPhase("idle"), 3000);
@@ -140,14 +131,9 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setSendMessagePhase("signing");
     setSendMessageError(null);
     try {
-      const sails = await initSails(api);
-      const service = sails?.services?.Demo ?? sails?.services?.demo;
-      const tx = service.functions.SendMessage(senText);
-      tx.withAccount(account.address, signer ? { signer } : undefined);
-      await tx.calculateGas();
-      setSendMessagePhase("submitted");
-      const result = await tx.signAndSend();
-      await result.response();
+      await txSendMessage(api, programId, account.address, senText, signer, {
+        onSubmitted: () => setSendMessagePhase("submitted"),
+      });
       setSendMessagePhase("confirmed");
       onTxSuccess();
       setTimeout(() => setSendMessagePhase("idle"), 3000);
@@ -167,14 +153,9 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
     setSetGreetingPhase("signing");
     setSetGreetingError(null);
     try {
-      const sails = await initSails(api);
-      const service = sails?.services?.Demo ?? sails?.services?.demo;
-      const tx = service.functions.SetGreeting(setGreeting);
-      tx.withAccount(account.address, signer ? { signer } : undefined);
-      await tx.calculateGas();
-      setSetGreetingPhase("submitted");
-      const result = await tx.signAndSend();
-      await result.response();
+      await txSetGreeting(api, programId, account.address, setGreeting, signer, {
+        onSubmitted: () => setSetGreetingPhase("submitted"),
+      });
       setSetGreetingPhase("confirmed");
       onTxSuccess();
       setTimeout(() => setSetGreetingPhase("idle"), 3000);
@@ -202,9 +183,9 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
           <button
             onClick={handleHandlePing}
             disabled={disabled || busy}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97]"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none"
           >
-            <Clock size={16} weight="bold" />
+            <Clock size={16} weight="bold" aria-hidden="true" />
             HandlePing
           </button>
           <TxStatus phase={hanPhase} error={hanError} onDismiss={() => { setHandlePingPhase("idle"); setHandlePingError(null); }} />
@@ -214,44 +195,43 @@ export function ActionsPanel({ onTxSuccess }: { onTxSuccess: () => void }) {
           <button
             onClick={handleIncrement}
             disabled={disabled || busy}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97]"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600/80 text-emerald-50 text-base font-medium hover:bg-emerald-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none"
           >
-            <PlusCircle size={16} weight="bold" />
+            <PlusCircle size={16} weight="bold" aria-hidden="true" />
             Increment
           </button>
           <TxStatus phase={incPhase} error={incError} onDismiss={() => { setIncrementPhase("idle"); setIncrementError(null); }} />
         </div>
         {/* SchedulePing */}
         <div className="py-5">
-          <label className="block text-sm text-zinc-400 font-medium mb-2">SchedulePing</label>
           <div className="flex gap-2 items-center">
-            <input type="number" value={schDelay} onChange={(e) => setSchedulePingDelay(Number(e.target.value))} className="w-24 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all" />
-            <span className="text-sm text-zinc-400">delay</span>
-            <button onClick={handleSchedulePing} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-all disabled:opacity-30 active:scale-[0.97] ml-auto">SchedulePing</button>
+            <label htmlFor="scheduleping-delay" className="text-sm text-zinc-400">delay</label>
+            <input id="scheduleping-delay" type="number" autoComplete="off" value={schDelay} onChange={(e) => setSchedulePingDelay(Number(e.target.value))} className="w-24 px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm font-mono border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors" />
+            <button onClick={handleSchedulePing} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors disabled:opacity-30 active:scale-[0.97] ml-auto focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">SchedulePing</button>
           </div>
           <TxStatus phase={schPhase} error={schError} onDismiss={() => { setSchedulePingPhase("idle"); setSchedulePingError(null); }} />
         </div>
         {/* SendMessage */}
         <div className="py-5">
-          <label className="block text-sm text-zinc-400 font-medium mb-2">SendMessage</label>
           <div className="flex gap-2 items-center">
             <div className="flex-1 relative">
-              <input type="text" value={senText} onChange={(e) => setSendMessageText(e.target.value)} placeholder="text..." className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />
+              <label htmlFor="sendmessage-text" className="sr-only">text</label>
+              <input id="sendmessage-text" type="text" autoComplete="off" value={senText} onChange={(e) => setSendMessageText(e.target.value)} placeholder="text…" className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors placeholder:text-zinc-500" />
               {senText.length > 0 && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-600">{senText.length}</span>}
             </div>
-            <button onClick={handleSendMessage} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-all disabled:opacity-30 active:scale-[0.97] ml-auto">SendMessage</button>
+            <button onClick={handleSendMessage} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors disabled:opacity-30 active:scale-[0.97] ml-auto focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">SendMessage</button>
           </div>
           <TxStatus phase={senPhase} error={senError} onDismiss={() => { setSendMessagePhase("idle"); setSendMessageError(null); }} />
         </div>
         {/* SetGreeting */}
         <div className="pt-5">
-          <label className="block text-sm text-zinc-400 font-medium mb-2">SetGreeting</label>
           <div className="flex gap-2 items-center">
             <div className="flex-1 relative">
-              <input type="text" value={setGreeting} onChange={(e) => setSetGreetingGreeting(e.target.value)} placeholder="greeting..." className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-500" />
+              <label htmlFor="setgreeting-greeting" className="sr-only">greeting</label>
+              <input id="setgreeting-greeting" type="text" autoComplete="off" value={setGreeting} onChange={(e) => setSetGreetingGreeting(e.target.value)} placeholder="greeting…" className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 text-zinc-200 text-sm border border-zinc-800 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-colors placeholder:text-zinc-500" />
               {setGreeting.length > 0 && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-600">{setGreeting.length}</span>}
             </div>
-            <button onClick={handleSetGreeting} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-all disabled:opacity-30 active:scale-[0.97] ml-auto">SetGreeting</button>
+            <button onClick={handleSetGreeting} disabled={disabled || busy} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors disabled:opacity-30 active:scale-[0.97] ml-auto focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:outline-none">SetGreeting</button>
           </div>
           <TxStatus phase={setPhase} error={setError} onDismiss={() => { setSetGreetingPhase("idle"); setSetGreetingError(null); }} />
         </div>

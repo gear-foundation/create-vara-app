@@ -4,17 +4,11 @@
 // Custom helpers should go in a separate file (e.g., sails-helpers.ts)
 
 import type { GearApi } from "@gear-js/api";
-import type { Sails } from "sails-js";
+import type { SailsProgram } from "sails-js";
 import type { SignerOptions } from "@polkadot/api/types";
 import idlRaw from "@/assets/demo.idl?raw";
 
 // -- Types from IDL --
-
-export interface StoredMessage {
-  sender: string;
-  text: string;
-  block_height: number;
-}
 
 export interface StateView {
   counter: string;
@@ -24,42 +18,51 @@ export interface StateView {
   greeting: string;
 }
 
-let cachedSails: Promise<Sails> | null = null;
-let cachedApi: GearApi | null = null;
+export interface StoredMessage {
+  sender: string;
+  text: string;
+  block_height: number;
+}
 
-export async function initSails(api: GearApi, programId?: string): Promise<Sails> {
-  // Invalidate cache if api instance changed (fixes stale connection after reconnect)
-  if (cachedSails && cachedApi !== api) {
-    cachedSails = null;
+const sailsCache = new WeakMap<GearApi, Map<string, Promise<SailsProgram>>>();
+
+export async function initSails(api: GearApi, programId?: string): Promise<SailsProgram> {
+  const key = programId || "";
+  let apiCache = sailsCache.get(api);
+  if (!apiCache) {
+    apiCache = new Map();
+    sailsCache.set(api, apiCache);
   }
-  if (!cachedSails) {
-    cachedApi = api;
-    cachedSails = (async () => {
-      const [{ Sails }, { SailsIdlParser }] = await Promise.all([
+  let cached = apiCache.get(key);
+  if (!cached) {
+    cached = (async () => {
+      const [{ SailsProgram }, { SailsIdlParser }] = await Promise.all([
         import("sails-js"),
-        import("sails-js-parser"),
+        import("sails-js/parser"),
       ]);
-      const parser = await SailsIdlParser.new();
-      const sails = new Sails(parser);
+      const parser = new SailsIdlParser();
+      await parser.init();
+      const sails = new SailsProgram(parser.parse(idlRaw));
       sails.setApi(api);
-      sails.parseIdl(idlRaw);
+      if (programId) sails.setProgramId(programId as `0x${string}`);
       return sails;
     })().catch((err) => {
-      cachedSails = null;
-      cachedApi = null;
+      apiCache?.delete(key);
       throw err;
     });
+    apiCache.set(key, cached);
   }
-  const sails = await cachedSails;
-  if (programId) {
-    sails.setProgramId(programId as `0x${string}`);
-  }
-  return sails;
+  return cached;
 }
 
-function getService(sails: Sails) {
+function getService(sails: SailsProgram) {
   return sails.services.Demo ?? sails.services.demo;
 }
+
+export const PROGRAM_PROBE = {
+  serviceName: "Demo",
+  queryName: "GetCounter",
+} as const;
 
 // -- Queries --
 

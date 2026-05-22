@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { Sails } from "sails-js";
+import type { SailsProgram } from "sails-js";
 import { useChainApi } from "@/providers/chain-provider";
 import { initSails } from "@/lib/sails-client";
 
@@ -8,7 +8,7 @@ import { initSails } from "@/lib/sails-client";
  * Handles lazy initialization, API reconnection, and programId changes.
  */
 export function useSails() {
-  const [sails, setSails] = useState<Sails | null>(null);
+  const [sails, setSails] = useState<SailsProgram | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { api, apiStatus, programId } = useChainApi();

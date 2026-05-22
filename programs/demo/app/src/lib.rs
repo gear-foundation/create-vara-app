@@ -42,18 +42,16 @@ fn seed() {
 // Types
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Encode, Decode, TypeInfo)]
-#[codec(crate = sails_rs::scale_codec)]
-#[scale_info(crate = sails_rs::scale_info)]
+#[sails_type]
+#[derive(Clone, Debug)]
 pub struct StoredMessage {
     pub sender: ActorId,
     pub text: String,
     pub block_height: u32,
 }
 
-#[derive(Clone, Debug, Encode, Decode, TypeInfo)]
-#[codec(crate = sails_rs::scale_codec)]
-#[scale_info(crate = sails_rs::scale_info)]
+#[sails_type]
+#[derive(Clone, Debug)]
 pub struct StateView {
     pub counter: u64,
     pub last_caller: Option<ActorId>,
@@ -67,28 +65,13 @@ pub struct StateView {
 // ---------------------------------------------------------------------------
 
 #[event]
-#[derive(Encode, Decode, TypeInfo)]
-#[codec(crate = sails_rs::scale_codec)]
-#[scale_info(crate = sails_rs::scale_info)]
+#[sails_type]
 pub enum DemoEvents {
-    Incremented {
-        new_value: u64,
-        caller: ActorId,
-    },
-    MessageSent {
-        sender: ActorId,
-        text: String,
-    },
-    PingScheduled {
-        delay: u32,
-    },
-    PingReceived {
-        ping_count: u64,
-    },
-    GreetingSet {
-        greeting: String,
-        caller: ActorId,
-    },
+    Incremented { new_value: u64, caller: ActorId },
+    MessageSent { sender: ActorId, text: String },
+    PingScheduled { delay: u32 },
+    PingReceived { ping_count: u64 },
+    GreetingSet { greeting: String, caller: ActorId },
 }
 
 // ---------------------------------------------------------------------------
@@ -161,16 +144,15 @@ impl DemoService {
             panic!("Delay must be at least 1 block");
         }
 
-        let payload = ["Demo".encode(), "HandlePing".encode()].concat();
+        const DEMO_ROUTE_IDX: u8 = 1;
+        let payload = sails_rs::gstd::encode_invocation_payload::<
+            demo_service_meta::__HandlePingParams,
+            _,
+            _,
+        >(&(), DEMO_ROUTE_IDX, |encoded| encoded.to_vec());
 
-        msg::send_bytes_with_gas_delayed(
-            exec::program_id(),
-            payload,
-            5_000_000_000,
-            0,
-            delay,
-        )
-        .expect("Failed to schedule delayed message");
+        msg::send_bytes_with_gas_delayed(exec::program_id(), payload, 5_000_000_000, 0, delay)
+            .expect("Failed to schedule delayed message");
 
         self.emit_event(DemoEvents::PingScheduled { delay })
             .expect("Failed to emit event");
@@ -204,8 +186,11 @@ impl DemoService {
         s.greeting = greeting.clone();
         let caller = msg::source();
         s.last_caller = Some(caller);
-        self.emit_event(DemoEvents::GreetingSet { greeting: greeting.clone(), caller })
-            .expect("Failed to emit event");
+        self.emit_event(DemoEvents::GreetingSet {
+            greeting: greeting.clone(),
+            caller,
+        })
+        .expect("Failed to emit event");
         greeting
     }
 

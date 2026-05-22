@@ -3,24 +3,52 @@
 // Default IDL path: src/assets/demo.idl
 
 import { readFileSync, writeFileSync } from "fs";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import { resolve, dirname, relative, sep } from "path";
+import { createRequire } from "module";
+import { fileURLToPath, pathToFileURL } from "url";
 import {
-  getPrimitiveLabel, getTypeLabel, primToTs, getTsType,
+  adaptIdlV2,
+  getTypeLabel, getTsType,
   methodIcon, isSmallNumeric, isBigNumeric, isHexType, defaultValueStr,
 } from "./scaffold-types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FRONTEND_DIR = resolve(__dirname, "..", "frontend");
+const ASSETS_DIR = resolve(FRONTEND_DIR, "src/assets");
 
-// --- IDL Parsing (uses sails-js-parser) ---
+// --- IDL Parsing ---
 
-async function parseIdl(idlText: string) {
-  // Import from frontend/node_modules since that's where the dep lives
-  const parserPath = resolve(FRONTEND_DIR, "node_modules/sails-js-parser/lib/index.js");
-  const { SailsIdlParser } = await import(parserPath);
-  const parser = await SailsIdlParser.new();
-  return parser.parse(idlText);
+export async function parseSailsIdl(idlText: string) {
+  const requireFromFrontend = createRequire(resolve(FRONTEND_DIR, "package.json"));
+  const parserPath = requireFromFrontend.resolve("sails-js/parser");
+  const { SailsIdlParser } = await import(pathToFileURL(parserPath).href);
+  const parser = new SailsIdlParser();
+  await parser.init();
+  try {
+    return adaptIdlV2(parser.parse(idlText));
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`IDL v2 required: ${detail}`);
+  }
+}
+
+function deriveIdlImport(idlPath: string) {
+  const absIdlPath = resolve(idlPath);
+  const relFromAssets = relative(ASSETS_DIR, absIdlPath);
+  if (
+    relFromAssets === "" ||
+    relFromAssets.startsWith("..") ||
+    relFromAssets.includes(`..${sep}`) ||
+    relFromAssets.startsWith("/")
+  ) {
+    throw new Error(`IDL must be inside ${ASSETS_DIR}`);
+  }
+  const normalized = relFromAssets.split(sep).join("/");
+  return {
+    absIdlPath,
+    idlRelPath: `src/assets/${normalized}`,
+    assetImportPath: `@/assets/${normalized}`,
+  };
 }
 
 // --- Naming conventions ---
@@ -105,9 +133,11 @@ function generateSailsClient(
   queries: any[],
   commands: any[],
   program: any,
-  idlRelPath: string
+  idlRelPath: string,
+  assetImportPath: string,
 ): string {
   const lines: string[] = [];
+  const firstProbeQuery = queries.find((q) => q.params.length === 0);
 
   // Header
   lines.push(
@@ -117,9 +147,9 @@ function generateSailsClient(
     `// Custom helpers should go in a separate file (e.g., sails-helpers.ts)`,
     ``,
     `import type { GearApi } from "@gear-js/api";`,
-    `import type { Sails } from "sails-js";`,
+    `import type { SailsProgram } from "sails-js";`,
     `import type { SignerOptions } from "@polkadot/api/types";`,
-    `import idlRaw from "@/assets/demo.idl?raw";`,
+    `import idlRaw from "${assetImportPath}?raw";`,
     ``,
   );
 
@@ -130,48 +160,51 @@ function generateSailsClient(
     lines.push(...typeLines);
   }
 
-  // initSails boilerplate — caches on API, sets programId before returning
+  // initSails boilerplate caches one immutable SailsProgram per API + program ID.
   lines.push(
-    `let cachedSails: Promise<Sails> | null = null;`,
-    `let cachedApi: GearApi | null = null;`,
+    `const sailsCache = new WeakMap<GearApi, Map<string, Promise<SailsProgram>>>();`,
     ``,
-    `export async function initSails(api: GearApi, programId?: string): Promise<Sails> {`,
-    `  // Invalidate cache if api instance changed (fixes stale connection after reconnect)`,
-    `  if (cachedSails && cachedApi !== api) {`,
-    `    cachedSails = null;`,
+    `export async function initSails(api: GearApi, programId?: string): Promise<SailsProgram> {`,
+    `  const key = programId || "";`,
+    `  let apiCache = sailsCache.get(api);`,
+    `  if (!apiCache) {`,
+    `    apiCache = new Map();`,
+    `    sailsCache.set(api, apiCache);`,
     `  }`,
-    `  if (!cachedSails) {`,
-    `    cachedApi = api;`,
-    `    cachedSails = (async () => {`,
-    `      const [{ Sails }, { SailsIdlParser }] = await Promise.all([`,
+    `  let cached = apiCache.get(key);`,
+    `  if (!cached) {`,
+    `    cached = (async () => {`,
+    `      const [{ SailsProgram }, { SailsIdlParser }] = await Promise.all([`,
     `        import("sails-js"),`,
-    `        import("sails-js-parser"),`,
+    `        import("sails-js/parser"),`,
     `      ]);`,
-    `      const parser = await SailsIdlParser.new();`,
-    `      const sails = new Sails(parser);`,
+    `      const parser = new SailsIdlParser();`,
+    `      await parser.init();`,
+    `      const sails = new SailsProgram(parser.parse(idlRaw));`,
     `      sails.setApi(api);`,
-    `      sails.parseIdl(idlRaw);`,
+    `      if (programId) sails.setProgramId(programId as \`0x\${string}\`);`,
     `      return sails;`,
     `    })().catch((err) => {`,
-    `      cachedSails = null;`,
-    `      cachedApi = null;`,
+    `      apiCache?.delete(key);`,
     `      throw err;`,
     `    });`,
+    `    apiCache.set(key, cached);`,
     `  }`,
-    `  const sails = await cachedSails;`,
-    `  if (programId) {`,
-    `    sails.setProgramId(programId as \`0x\${string}\`);`,
-    `  }`,
-    `  return sails;`,
+    `  return cached;`,
     `}`,
     ``,
   );
 
   // getService helper with actual service name
   lines.push(
-    `function getService(sails: Sails) {`,
+    `function getService(sails: SailsProgram) {`,
     `  return sails.services.${serviceName} ?? sails.services.${serviceName.toLowerCase()};`,
     `}`,
+    ``,
+    `export const PROGRAM_PROBE = {`,
+    `  serviceName: "${serviceName}",`,
+    `  queryName: ${firstProbeQuery ? `"${firstProbeQuery.name}"` : "null"},`,
+    `} as const;`,
     ``,
   );
 
@@ -518,12 +551,13 @@ function generateStatePanel(
   idlRelPath: string,
 ): string {
   const L: string[] = [];
+  const autoQueries = queries.filter((q: any) => q.params.length === 0);
 
   // Deduplicate: if a struct query (e.g. GetState) has fields that overlap with
   // scalar queries (e.g. GetCounter returns counter, GetState.counter exists),
   // skip the scalar queries to avoid showing the same data twice.
   const structQueryFields = new Set<string>();
-  for (const q of queries) {
+  for (const q of autoQueries) {
     const fields = resolveStructFields(program, q.def);
     if (fields) {
       for (const f of fields) {
@@ -532,7 +566,7 @@ function generateStatePanel(
     }
   }
 
-  const dedupedQueries = queries.filter((q: any) => {
+  const dedupedQueries = autoQueries.filter((q: any) => {
     // Keep struct/vec queries
     const fields = resolveStructFields(program, q.def);
     if (fields) return true;
@@ -606,6 +640,24 @@ function generateStatePanel(
   L.push(`export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {`);
   L.push(`  const { api, apiStatus, programId } = useChainApi();`);
   L.push(`  const { account } = useWallet();`);
+
+  if (queryInfos.length === 0) {
+    L.push(``);
+    L.push(`  return (`);
+    L.push(`    <div className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-6 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.4)]">`);
+    L.push(`      <div className="flex items-center justify-between mb-6">`);
+    L.push(`        <h2 className="text-sm font-medium text-zinc-400">Program State</h2>`);
+    L.push(`      </div>`);
+    L.push(`      <div className="py-8 text-center">`);
+    L.push(`        <Pulse size={32} weight="duotone" className="mx-auto text-zinc-500 mb-3" />`);
+    L.push(`        <p className="text-sm text-zinc-400">No zero-argument queries are available for automatic polling.</p>`);
+    L.push(`      </div>`);
+    L.push(`    </div>`);
+    L.push(`  );`);
+    L.push(`}`);
+    L.push(``);
+    return L.join("\n");
+  }
 
   // State for each query result — typed from IDL
   for (const qi of queryInfos) {
@@ -791,21 +843,27 @@ function generateStatePanel(
 
 async function main() {
   const idlPath = process.argv[2] || resolve(FRONTEND_DIR, "src/assets/demo.idl");
-  const absIdlPath = resolve(idlPath);
+  let idlInfo: ReturnType<typeof deriveIdlImport>;
+  try {
+    idlInfo = deriveIdlImport(idlPath);
+  } catch (err) {
+    console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
 
   let idlText: string;
   try {
-    idlText = readFileSync(absIdlPath, "utf-8");
+    idlText = readFileSync(idlInfo.absIdlPath, "utf-8");
   } catch {
-    console.error(`ERROR: IDL file not found at ${absIdlPath}`);
+    console.error(`ERROR: IDL file not found at ${idlInfo.absIdlPath}`);
     console.error(`Expected path: frontend/src/assets/demo.idl`);
     process.exit(1);
   }
 
-  console.log(`Parsing IDL: ${absIdlPath}`);
+  console.log(`Parsing IDL: ${idlInfo.absIdlPath}`);
   let program: any;
   try {
-    program = await parseIdl(idlText);
+    program = await parseSailsIdl(idlText);
   } catch (err) {
     console.error(`ERROR: Failed to parse IDL`);
     console.error(err);
@@ -828,22 +886,27 @@ async function main() {
   console.log(`  Queries: ${queries.map((q: any) => q.name).join(", ")}`);
   console.log(`  Commands: ${commands.map((c: any) => c.name).join(", ")}`);
 
-  const idlRelPath = "src/assets/demo.idl";
-
   // 1. Generate sails-client.ts
-  const clientOutput = generateSailsClient(serviceName, queries, commands, program, idlRelPath);
+  const clientOutput = generateSailsClient(
+    serviceName,
+    queries,
+    commands,
+    program,
+    idlInfo.idlRelPath,
+    idlInfo.assetImportPath,
+  );
   const clientPath = resolve(FRONTEND_DIR, "src/lib/sails-client.ts");
   writeFileSync(clientPath, clientOutput);
   console.log(`Generated: ${clientPath}`);
 
   // 2. Generate ActionsPanel.tsx
-  const actionsOutput = generateActionsPanel(serviceName, commands, idlRelPath);
+  const actionsOutput = generateActionsPanel(serviceName, commands, idlInfo.idlRelPath);
   const actionsPath = resolve(FRONTEND_DIR, "src/components/ActionsPanel.tsx");
   writeFileSync(actionsPath, actionsOutput);
   console.log(`Generated: ${actionsPath}`);
 
   // 3. Generate StatePanel.tsx
-  const stateOutput = generateStatePanel(queries, program, idlRelPath);
+  const stateOutput = generateStatePanel(queries, program, idlInfo.idlRelPath);
   const statePath = resolve(FRONTEND_DIR, "src/components/StatePanel.tsx");
   writeFileSync(statePath, stateOutput);
   console.log(`Generated: ${statePath}`);
@@ -857,4 +920,3 @@ if (isDirectRun) {
     process.exit(1);
   });
 }
-

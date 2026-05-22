@@ -69,20 +69,15 @@ export function NetworkSelector() {
     setProbing(true);
     setProbeError(null);
     try {
-      // Create a separate Sails instance for probing (don't mutate the shared singleton)
-      const [{ Sails }, { SailsIdlParser }] = await Promise.all([
-        import("sails-js"),
-        import("sails-js-parser"),
-      ]);
-      const parser = await SailsIdlParser.new();
-      const probeSails = new Sails(parser);
-      probeSails.setApi(api);
-      const { getIdlText } = await import("@/lib/sails-client");
-      probeSails.parseIdl(getIdlText());
-      probeSails.setProgramId(trimmed as `0x${string}`);
-      const service = probeSails.services?.Demo ?? probeSails.services?.demo;
+      const { initSails, PROGRAM_PROBE } = await import("@/lib/sails-client");
+      const probeSails = await initSails(api, trimmed);
+      const service =
+        probeSails.services?.[PROGRAM_PROBE.serviceName] ??
+        probeSails.services?.[PROGRAM_PROBE.serviceName.toLowerCase()];
       if (!service) throw new Error("Service not found in IDL");
-      await service.queries.GetCounter().call();
+      if (PROGRAM_PROBE.queryName) {
+        await service.queries[PROGRAM_PROBE.queryName]().call();
+      }
 
       // Probe succeeded — update state (all consumers re-render with new programId)
       localStorage.setItem(STORAGE_CUSTOM_PID, trimmed);
@@ -140,7 +135,7 @@ export function NetworkSelector() {
               stiffness: 300,
               damping: 30,
             }}
-            className="absolute top-full left-0 mt-2 w-72 rounded-2xl border border-zinc-800/60 bg-[#18181b] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.6)] overflow-hidden z-50"
+            className="absolute top-full left-0 mt-2 w-[calc(100vw-2rem)] sm:w-72 rounded-2xl border border-zinc-800/60 bg-[#18181b] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.6)] overflow-hidden z-50"
           >
             <div className="px-5 py-3 border-b border-zinc-800/50">
               <span className="text-sm text-zinc-400 font-medium">

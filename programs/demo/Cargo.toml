@@ -36,14 +36,14 @@ members = ["app", "client"]
 version = "0.1.0"
 authors = ["Gear Technologies"]
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.93"
 repository = "https://github.com/gear-tech/demo"
 license = "MIT"
 keywords = ["gear", "sails", "smart-contracts", "wasm", "no-std"]
 categories = ["cryptography::cryptocurrencies", "no-std", "wasm"]
 
 [workspace.dependencies]
-sails-rs = "0.10.3"
+sails-rs = "1.0.0"
 tokio = "1.48.0"
 demo-app = { version = "0.1.0", path = "app" }
 demo-client = { version = "0.1.0", path = "client" }

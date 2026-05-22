@@ -1,8 +1,212 @@
-// Pure type-mapping functions extracted from scaffold-client.ts for testability.
-// No Node.js imports (fs, path, url) so these can be tested with vitest.
+// IDL v2 adapter and type-mapping helpers shared by the scaffold generator and tests.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDef = any;
+
+export interface AdaptedParam {
+  name: string;
+  def: AnyDef;
+}
+
+export interface AdaptedFunc {
+  name: string;
+  isQuery: boolean;
+  params: AdaptedParam[];
+  def: AnyDef;
+  docs?: string;
+}
+
+export interface AdaptedType {
+  name: string;
+  def: AnyDef;
+}
+
+export interface AdaptedService {
+  name: string;
+  funcs: AdaptedFunc[];
+}
+
+export interface AdaptedProgram {
+  services: AdaptedService[];
+  types: AdaptedType[];
+  getTypeByName(name: string): AdaptedType | undefined;
+}
+
+const PRIMITIVE_FLAGS: Record<string, string> = {
+  "()": "isNull",
+  bool: "isBool",
+  char: "isChar",
+  String: "isStr",
+  str: "isStr",
+  u8: "isU8",
+  u16: "isU16",
+  u32: "isU32",
+  u64: "isU64",
+  u128: "isU128",
+  i8: "isI8",
+  i16: "isI16",
+  i32: "isI32",
+  i64: "isI64",
+  i128: "isI128",
+  ActorId: "isActorId",
+  actor_id: "isActorId",
+  CodeId: "isCodeId",
+  MessageId: "isMessageId",
+  H160: "isH160",
+  H256: "isH256",
+  U256: "isU256",
+  NonZeroU8: "isNonZeroU8",
+  NonZeroU16: "isNonZeroU16",
+  NonZeroU32: "isNonZeroU32",
+  NonZeroU64: "isNonZeroU64",
+  NonZeroU128: "isNonZeroU128",
+  NonZeroU256: "isNonZeroU256",
+};
+
+function primitiveDef(name: string): AnyDef | null {
+  const flag = PRIMITIVE_FLAGS[name];
+  return flag ? { isPrimitive: true, asPrimitive: { [flag]: true } } : null;
+}
+
+export function typeDeclToDef(typeDecl: AnyDef): AnyDef {
+  if (!typeDecl) return { isPrimitive: true, asPrimitive: { isNull: true } };
+  if (typeof typeDecl === "string") {
+    return primitiveDef(typeDecl) ?? { isUserDefined: true, asUserDefined: { name: typeDecl } };
+  }
+  if (typeDecl.kind === "slice") return { isVec: true, asVec: { def: typeDeclToDef(typeDecl.item) } };
+  if (typeDecl.kind === "array") {
+    return {
+      isFixedSizeArray: true,
+      asFixedSizeArray: { def: typeDeclToDef(typeDecl.item), len: typeDecl.len },
+    };
+  }
+  if (typeDecl.kind === "tuple") {
+    if (typeDecl.types.length === 0) return primitiveDef("()");
+    return {
+      isStruct: true,
+      asStruct: {
+        fields: typeDecl.types.map((item: AnyDef, index: number) => ({
+          name: `field${index}`,
+          def: typeDeclToDef(item),
+        })),
+      },
+    };
+  }
+  if (typeDecl.kind === "generic") {
+    return { isUserDefined: true, asUserDefined: { name: typeDecl.name } };
+  }
+  if (typeDecl.kind === "named") {
+    const generics = typeDecl.generics ?? [];
+    if (typeDecl.name === "Option" && generics.length === 1) {
+      return { isOptional: true, asOptional: { def: typeDeclToDef(generics[0]) } };
+    }
+    if ((typeDecl.name === "Vec" || typeDecl.name === "Array") && generics.length === 1) {
+      return { isVec: true, asVec: { def: typeDeclToDef(generics[0]) } };
+    }
+    if (typeDecl.name === "Result" && generics.length === 2) {
+      return {
+        isResult: true,
+        asResult: {
+          ok: { def: typeDeclToDef(generics[0]) },
+          err: { def: typeDeclToDef(generics[1]) },
+        },
+      };
+    }
+    return { isUserDefined: true, asUserDefined: { name: typeDecl.name } };
+  }
+  return { isUserDefined: true, asUserDefined: { name: "unknown" } };
+}
+
+function typeToAdapted(type: AnyDef): AdaptedType | null {
+  if (!type?.name) return null;
+  if (type.kind === "struct") {
+    return {
+      name: type.name,
+      def: {
+        isStruct: true,
+        asStruct: {
+          fields: (type.fields ?? []).map((field: AnyDef, index: number) => ({
+            name: field.name ?? `field${index}`,
+            def: typeDeclToDef(field.type),
+          })),
+        },
+      },
+    };
+  }
+  if (type.kind === "enum") {
+    return {
+      name: type.name,
+      def: {
+        isEnum: true,
+        asEnum: {
+          variants: (type.variants ?? []).map((variant: AnyDef) => ({
+            name: variant.name,
+            def: (variant.fields ?? []).length === 0
+              ? primitiveDef("()")
+              : {
+                  isStruct: true,
+                  asStruct: {
+                    fields: variant.fields.map((field: AnyDef, index: number) => ({
+                      name: field.name ?? `field${index}`,
+                      def: typeDeclToDef(field.type),
+                    })),
+                  },
+                },
+          })),
+        },
+      },
+    };
+  }
+  if (type.kind === "alias") {
+    return { name: type.name, def: typeDeclToDef(type.target) };
+  }
+  return null;
+}
+
+export function adaptIdlV2(doc: AnyDef): AdaptedProgram {
+  if (!doc || typeof doc !== "object" || !Array.isArray(doc.services)) {
+    throw new Error("IDL v2 required: expected a Sails 1.0 IDL document with services.");
+  }
+
+  const serviceUnits = new Map<string, AnyDef>();
+  for (const service of doc.services) {
+    serviceUnits.set(service.name, service);
+  }
+
+  const exposed = doc.program?.services?.length
+    ? doc.program.services.map((service: AnyDef) => serviceUnits.get(service.name)).filter(Boolean)
+    : doc.services;
+
+  if (exposed.length === 0) {
+    throw new Error("IDL v2 required: no program services found.");
+  }
+
+  const adaptedTypes = [
+    ...(doc.program?.types ?? []),
+    ...exposed.flatMap((service: AnyDef) => service.types ?? []),
+  ].map(typeToAdapted).filter(Boolean) as AdaptedType[];
+  const typeByName = new Map(adaptedTypes.map((type) => [type.name, type]));
+
+  return {
+    services: exposed.map((service: AnyDef) => ({
+      name: service.name,
+      funcs: (service.funcs ?? []).map((func: AnyDef) => ({
+        name: func.name,
+        isQuery: func.kind === "query",
+        params: (func.params ?? []).map((param: AnyDef) => ({
+          name: param.name,
+          def: typeDeclToDef(param.type),
+        })),
+        def: typeDeclToDef(func.output),
+        docs: Array.isArray(func.docs) ? func.docs.join("\n") : undefined,
+      })),
+    })),
+    types: adaptedTypes,
+    getTypeByName(name: string) {
+      return typeByName.get(name);
+    },
+  };
+}
 
 export function getPrimitiveLabel(prim: AnyDef): string {
   if (prim.isNull) return "null";
@@ -91,7 +295,9 @@ export function getTsType(def: AnyDef): string {
     return `{ ${fields} }`;
   }
   if (def.isEnum) {
-    const hasPayloads = def.asEnum.variants.some((v: AnyDef) => v.def && !v.def.isNull);
+    const hasPayloads = def.asEnum.variants.some(
+      (v: AnyDef) => v.def && !v.def.isNull && !(v.def.isPrimitive && v.def.asPrimitive?.isNull),
+    );
     if (hasPayloads) return "unknown";
     return def.asEnum.variants.map((v: AnyDef) => `"${v.name}"`).join(" | ");
   }

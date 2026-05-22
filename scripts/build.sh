@@ -11,7 +11,7 @@ cargo build --release
 
 echo ""
 echo "=== Syncing IDL to frontend ==="
-IDL_SRC="$PROGRAM_DIR/demo.idl"
+IDL_SRC="$PROGRAM_DIR/target/wasm32-gear/release/demo.idl"
 IDL_DST="$FRONTEND_DIR/src/assets/demo.idl"
 
 if [ ! -f "$IDL_SRC" ]; then
@@ -48,6 +48,15 @@ echo ""
 echo "=== Running tests ==="
 cd "$PROGRAM_DIR"
 cargo test --release
+
+echo ""
+echo "=== Running frontend tests ==="
+cd "$FRONTEND_DIR"
+npm test
+
+echo ""
+echo "=== Building frontend ==="
+npm run build
 
 echo ""
 echo "=== Done ==="
