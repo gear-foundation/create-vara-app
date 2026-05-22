@@ -45,7 +45,32 @@ export async function initSails(api: GearApi) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getService(sails: any): any {
-  return sails?.services?.Demo ?? sails?.services?.demo;
+  const expected = "Demo";
+  const services = (sails?.services ?? {}) as Record<string, unknown>;
+  const keys = Object.keys(services);
+  const normalizeServiceName = (name: string) =>
+    name.replace(/[^a-z0-9]/gi, "").toLowerCase();
+
+  if (services[expected]) return services[expected];
+  if (services[expected.toLowerCase()]) return services[expected.toLowerCase()];
+
+  const normalizedExpected = normalizeServiceName(expected);
+  const normalizedMatches = keys.filter(
+    (k) => normalizeServiceName(k) === normalizedExpected
+  );
+  if (normalizedMatches.length === 1) {
+    return services[normalizedMatches[0]];
+  }
+  if (normalizedMatches.length > 1) {
+    throw new Error(
+      `Ambiguous service match for "${expected}". Candidates: ${normalizedMatches.join(", ")}`
+    );
+  }
+
+  const available = keys.length > 0 ? keys.join(", ") : "(none)";
+  throw new Error(
+    `Service "${expected}" not found in parsed IDL. Available services: ${available}`
+  );
 }
 
 // -- Queries --
