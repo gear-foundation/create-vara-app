@@ -21,7 +21,7 @@ interface TypedInputProps {
 
 /**
  * Recursive type-driven form renderer for ISailsTypeDef.
- * MVP: primitives + struct + optional. Unsupported types get JSON textarea fallback.
+ * Unsupported types get a JSON textarea fallback.
  */
 export function TypedInput({
   typeDef: rawTypeDef,
@@ -66,12 +66,10 @@ export function TypedInput({
     return <JsonFallback label={label} typeDef={typeDef} value={value} onChange={onChange} />;
   }
 
-  // Primitive types
   if (typeDef.isPrimitive) {
     return <PrimitiveInput typeDef={typeDef} value={value} onChange={onChange} label={label} />;
   }
 
-  // Optional
   if (typeDef.isOptional) {
     return (
       <OptionalInput
@@ -86,7 +84,6 @@ export function TypedInput({
     );
   }
 
-  // Struct
   if (typeDef.isStruct) {
     return (
       <StructInput
@@ -101,7 +98,6 @@ export function TypedInput({
     );
   }
 
-  // Vec (add/remove list)
   if (typeDef.isVec) {
     return (
       <VecInput
@@ -116,7 +112,6 @@ export function TypedInput({
     );
   }
 
-  // Enum (dropdown + optional payload)
   if (typeDef.isEnum) {
     return (
       <EnumInput

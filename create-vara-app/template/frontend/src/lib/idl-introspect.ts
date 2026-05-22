@@ -28,30 +28,31 @@ function isV2TypeDecl(typeDef: TypeDef): boolean {
   return typeof typeDef === "string" || typeof typeDef?.kind === "string";
 }
 
+const PRIMITIVE_FLAGS: Record<string, string> = {
+  "()": "isNull",
+  bool: "isBool",
+  char: "isChar",
+  String: "isStr",
+  u8: "isU8",
+  u16: "isU16",
+  u32: "isU32",
+  u64: "isU64",
+  u128: "isU128",
+  i8: "isI8",
+  i16: "isI16",
+  i32: "isI32",
+  i64: "isI64",
+  i128: "isI128",
+  ActorId: "isActorId",
+  CodeId: "isCodeId",
+  MessageId: "isMessageId",
+  H160: "isH160",
+  H256: "isH256",
+  U256: "isU256",
+};
+
 function primitiveDef(name: string): TypeDef | null {
-  const flags: Record<string, string> = {
-    "()": "isNull",
-    bool: "isBool",
-    char: "isChar",
-    String: "isStr",
-    u8: "isU8",
-    u16: "isU16",
-    u32: "isU32",
-    u64: "isU64",
-    u128: "isU128",
-    i8: "isI8",
-    i16: "isI16",
-    i32: "isI32",
-    i64: "isI64",
-    i128: "isI128",
-    ActorId: "isActorId",
-    CodeId: "isCodeId",
-    MessageId: "isMessageId",
-    H160: "isH160",
-    H256: "isH256",
-    U256: "isU256",
-  };
-  const flag = flags[name];
+  const flag = PRIMITIVE_FLAGS[name];
   return flag ? { isPrimitive: true, asPrimitive: { [flag]: true } } : null;
 }
 
