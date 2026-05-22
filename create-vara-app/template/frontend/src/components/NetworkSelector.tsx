@@ -75,6 +75,8 @@ export function NetworkSelector() {
         probeSails.services?.[PROGRAM_PROBE.serviceName] ??
         probeSails.services?.[PROGRAM_PROBE.serviceName.toLowerCase()];
       if (!service) throw new Error("Service not found in IDL");
+      const exists = await api.program.exists(trimmed as `0x${string}`);
+      if (!exists) throw new Error("Program not found on chain");
       if (PROGRAM_PROBE.queryName) {
         await service.queries[PROGRAM_PROBE.queryName]().call();
       }

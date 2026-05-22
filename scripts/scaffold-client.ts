@@ -545,7 +545,7 @@ function resolveStructFields(program: any, typeDef: any): any[] | null {
   return null;
 }
 
-function generateStatePanel(
+export function generateStatePanel(
   queries: any[],
   program: any,
   idlRelPath: string,
@@ -592,6 +592,27 @@ function generateStatePanel(
       typeLabel: getTypeLabel(q.def),
     };
   });
+
+  if (queryInfos.length === 0) {
+    L.push(HEADER);
+    L.push(`import { Pulse } from "@phosphor-icons/react";`);
+    L.push(``);
+    L.push(`export function StatePanel(_props: { refreshTrigger: number }) {`);
+    L.push(`  return (`);
+    L.push(`    <div className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-6 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.4)]">`);
+    L.push(`      <div className="flex items-center justify-between mb-6">`);
+    L.push(`        <h2 className="text-sm font-medium text-zinc-400">Program State</h2>`);
+    L.push(`      </div>`);
+    L.push(`      <div className="py-8 text-center">`);
+    L.push(`        <Pulse size={32} weight="duotone" className="mx-auto text-zinc-500 mb-3" />`);
+    L.push(`        <p className="text-sm text-zinc-400">No zero-argument queries are available for automatic polling.</p>`);
+    L.push(`      </div>`);
+    L.push(`    </div>`);
+    L.push(`  );`);
+    L.push(`}`);
+    L.push(``);
+    return L.join("\n");
+  }
 
   // Build query imports and collect type names used in return types
   const queryImports = queryInfos.map((qi) => qi.fnName);
@@ -640,24 +661,6 @@ function generateStatePanel(
   L.push(`export function StatePanel({ refreshTrigger }: { refreshTrigger: number }) {`);
   L.push(`  const { api, apiStatus, programId } = useChainApi();`);
   L.push(`  const { account } = useWallet();`);
-
-  if (queryInfos.length === 0) {
-    L.push(``);
-    L.push(`  return (`);
-    L.push(`    <div className="rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-6 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.4)]">`);
-    L.push(`      <div className="flex items-center justify-between mb-6">`);
-    L.push(`        <h2 className="text-sm font-medium text-zinc-400">Program State</h2>`);
-    L.push(`      </div>`);
-    L.push(`      <div className="py-8 text-center">`);
-    L.push(`        <Pulse size={32} weight="duotone" className="mx-auto text-zinc-500 mb-3" />`);
-    L.push(`        <p className="text-sm text-zinc-400">No zero-argument queries are available for automatic polling.</p>`);
-    L.push(`      </div>`);
-    L.push(`    </div>`);
-    L.push(`  );`);
-    L.push(`}`);
-    L.push(``);
-    return L.join("\n");
-  }
 
   // State for each query result — typed from IDL
   for (const qi of queryInfos) {

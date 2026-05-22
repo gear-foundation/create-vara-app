@@ -358,6 +358,17 @@ describe("IDL v2 adapter", () => {
     expect(templateScaffoldClient).toBe(sourceScaffoldClient);
     expect(templateScaffoldTypes).toBe(sourceScaffoldTypes);
   });
+
+  it("keeps the no-auto-query StatePanel branch before polling imports", () => {
+    const emptyBranchIndex = sourceScaffoldClient.indexOf("if (queryInfos.length === 0)");
+    const pollingImportIndex = sourceScaffoldClient.indexOf("import { useState, useEffect, useCallback }");
+
+    expect(emptyBranchIndex).toBeGreaterThan(-1);
+    expect(pollingImportIndex).toBeGreaterThan(-1);
+    expect(emptyBranchIndex).toBeLessThan(pollingImportIndex);
+    expect(sourceScaffoldClient).toContain("export function StatePanel(_props: { refreshTrigger: number })");
+    expect(sourceScaffoldClient).toContain("No zero-argument queries are available");
+  });
 });
 
 describe("manual call IDL v2 coercion", () => {
