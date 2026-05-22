@@ -105,12 +105,12 @@ describe("primToTs", () => {
     expect(primToTs({ isI32: true })).toBe("number");
   });
 
-  it("maps big integers to string", () => {
-    expect(primToTs({ isU64: true })).toBe("string");
-    expect(primToTs({ isU128: true })).toBe("string");
-    expect(primToTs({ isU256: true })).toBe("string");
-    expect(primToTs({ isI64: true })).toBe("string");
-    expect(primToTs({ isI128: true })).toBe("string");
+  it("maps big integers to bigint", () => {
+    expect(primToTs({ isU64: true })).toBe("bigint");
+    expect(primToTs({ isU128: true })).toBe("bigint");
+    expect(primToTs({ isU256: true })).toBe("bigint");
+    expect(primToTs({ isI64: true })).toBe("bigint");
+    expect(primToTs({ isI128: true })).toBe("bigint");
   });
 
   it("maps NonZero small to number", () => {
@@ -119,10 +119,10 @@ describe("primToTs", () => {
     expect(primToTs({ isNonZeroU32: true })).toBe("number");
   });
 
-  it("maps NonZero big to string", () => {
-    expect(primToTs({ isNonZeroU64: true })).toBe("string");
-    expect(primToTs({ isNonZeroU128: true })).toBe("string");
-    expect(primToTs({ isNonZeroU256: true })).toBe("string");
+  it("maps NonZero big to bigint", () => {
+    expect(primToTs({ isNonZeroU64: true })).toBe("bigint");
+    expect(primToTs({ isNonZeroU128: true })).toBe("bigint");
+    expect(primToTs({ isNonZeroU256: true })).toBe("bigint");
   });
 
   it("maps hex/address types to string", () => {
@@ -149,7 +149,7 @@ describe("getTsType", () => {
   it("handles primitives", () => {
     expect(getTsType(prim({ isStr: true }))).toBe("string");
     expect(getTsType(prim({ isU32: true }))).toBe("number");
-    expect(getTsType(prim({ isU64: true }))).toBe("string");
+    expect(getTsType(prim({ isU64: true }))).toBe("bigint");
     expect(getTsType(prim({ isBool: true }))).toBe("boolean");
   });
 

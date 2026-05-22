@@ -54,6 +54,9 @@ cpSync(TEMPLATE_DIR, projectDir, { recursive: true });
 
 const frontendAssetsDir = resolve(projectDir, "frontend/src/assets");
 const idlFilename = idlPath ? basename(idlPath) : "demo.idl";
+const scaffoldIdlArg = idlFilename !== "demo.idl" ? ` src/assets/${idlFilename}` : "";
+const localScaffoldCommand = `./node_modules/.bin/tsx ../scripts/scaffold-client.ts${scaffoldIdlArg}`;
+const retryScaffoldCommand = `npx tsx ../scripts/scaffold-client.ts${scaffoldIdlArg}`;
 
 if (idlPath) {
   mkdirSync(frontendAssetsDir, { recursive: true });
@@ -101,13 +104,13 @@ try {
 
 console.log(`\n  Generating typed client from IDL...\n`);
 try {
-  execSync(`./node_modules/.bin/tsx ../scripts/scaffold-client.ts ${idlFilename !== "demo.idl" ? `src/assets/${idlFilename}` : ""}`, {
+  execSync(localScaffoldCommand, {
     cwd: resolve(projectDir, "frontend"),
     stdio: "inherit",
   });
 } catch {
   console.error("\n  Scaffold failed. You can retry manually:");
-  console.error(`  cd ${projectName}/frontend && npx tsx ../scripts/scaffold-client.ts\n`);
+  console.error(`  cd ${projectName}/frontend && ${retryScaffoldCommand}\n`);
 }
 
 // --- Done ---
@@ -124,5 +127,5 @@ console.log(`
   To rebuild after contract changes:
     cd ${projectName}/scripts
     # Copy updated IDL to frontend/src/assets/
-    cd ../frontend && npx tsx ../scripts/scaffold-client.ts
+    cd ../frontend && ${retryScaffoldCommand}
 `);

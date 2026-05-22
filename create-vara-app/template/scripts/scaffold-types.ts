@@ -271,8 +271,8 @@ export function primToTs(prim: AnyDef): string {
   if (prim.isNull) return "null";
   if (prim.isU8 || prim.isU16 || prim.isU32 || prim.isI8 || prim.isI16 || prim.isI32) return "number";
   if (prim.isNonZeroU8 || prim.isNonZeroU16 || prim.isNonZeroU32) return "number";
-  if (prim.isU64 || prim.isU128 || prim.isU256 || prim.isI64 || prim.isI128) return "string";
-  if (prim.isNonZeroU64 || prim.isNonZeroU128 || prim.isNonZeroU256) return "string";
+  if (prim.isU64 || prim.isU128 || prim.isU256 || prim.isI64 || prim.isI128) return "bigint";
+  if (prim.isNonZeroU64 || prim.isNonZeroU128 || prim.isNonZeroU256) return "bigint";
   if (prim.isActorId || prim.isCodeId || prim.isMessageId || prim.isH256 || prim.isH160) return "string";
   return "unknown";
 }

@@ -11,9 +11,9 @@ import idlRaw from "@/assets/demo.idl?raw";
 // -- Types from IDL --
 
 export interface StateView {
-  counter: string;
+  counter: bigint;
   last_caller: string | null;
-  ping_count: string;
+  ping_count: bigint;
   message_count: number;
   greeting: string;
 }
@@ -66,7 +66,7 @@ export const PROGRAM_PROBE = {
 
 // -- Queries --
 
-export async function queryCounter(api: GearApi, programId?: string): Promise<string> {
+export async function queryCounter(api: GearApi, programId?: string): Promise<bigint> {
   const sails = await initSails(api, programId);
   const service = getService(sails);
   return service.queries.GetCounter().call();
@@ -116,7 +116,7 @@ export async function txIncrement(
   account: string,
   signer?: unknown,
   options?: { onSubmitted?: () => void },
-): Promise<string> {
+): Promise<bigint> {
   const sails = await initSails(api, programId);
   const service = getService(sails);
   const tx = service.functions.Increment();

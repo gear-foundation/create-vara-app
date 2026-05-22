@@ -14,7 +14,7 @@ import {
   type StateView,
 } from "@/lib/sails-client";
 
-function MetricRow({ value, label, accentColor = "border-emerald-500/40" }: { value: string | number; label: string; accentColor?: string }) {
+function MetricRow({ value, label, accentColor = "border-emerald-500/40" }: { value: string | number | bigint; label: string; accentColor?: string }) {
   return (
     <div className={`border-l-2 ${accentColor} pl-4 py-2`}>
       <div className="font-mono text-3xl tracking-tighter text-zinc-300 leading-none">{String(value)}</div>
