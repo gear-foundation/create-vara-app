@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { getTypeLabel } from "@/lib/idl-introspect";
+import {
+  getTypeLabel,
+  normalizeResolvedType,
+  normalizeTypeDef,
+  type TypeResolver,
+} from "@/lib/idl-introspect";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TypeDef = any;
@@ -11,68 +16,7 @@ interface TypedInputProps {
   label?: string;
   depth?: number;
   visited?: Set<string>;
-  resolveType?: (name: string) => TypeDef | null;
-}
-
-function primitiveDef(name: string): TypeDef | null {
-  const flags: Record<string, string> = {
-    "()": "isNull",
-    bool: "isBool",
-    char: "isChar",
-    String: "isStr",
-    u8: "isU8",
-    u16: "isU16",
-    u32: "isU32",
-    u64: "isU64",
-    u128: "isU128",
-    i8: "isI8",
-    i16: "isI16",
-    i32: "isI32",
-    i64: "isI64",
-    i128: "isI128",
-    ActorId: "isActorId",
-    CodeId: "isCodeId",
-    MessageId: "isMessageId",
-    H160: "isH160",
-    H256: "isH256",
-    U256: "isU256",
-  };
-  const flag = flags[name];
-  return flag ? { isPrimitive: true, asPrimitive: { [flag]: true } } : null;
-}
-
-function normalizeTypeDef(typeDef: TypeDef): TypeDef {
-  if (!typeDef || typeDef.isPrimitive || typeDef.isOptional || typeDef.isVec || typeDef.isStruct || typeDef.isEnum || typeDef.isUserDefined) {
-    return typeDef;
-  }
-  if (typeof typeDef === "string") {
-    return primitiveDef(typeDef) ?? { isUserDefined: true, asUserDefined: { name: typeDef } };
-  }
-  if (typeDef.kind === "slice") return { isVec: true, asVec: { def: normalizeTypeDef(typeDef.item) } };
-  if (typeDef.kind === "array") return { isVec: true, asVec: { def: normalizeTypeDef(typeDef.item) } };
-  if (typeDef.kind === "tuple") {
-    return {
-      isStruct: true,
-      asStruct: {
-        fields: typeDef.types.map((item: TypeDef, i: number) => ({
-          name: `field${i}`,
-          def: normalizeTypeDef(item),
-        })),
-      },
-    };
-  }
-  if (typeDef.kind === "generic") return { isUserDefined: true, asUserDefined: { name: typeDef.name } };
-  if (typeDef.kind === "named") {
-    const generics = typeDef.generics ?? [];
-    if (typeDef.name === "Option" && generics.length === 1) {
-      return { isOptional: true, asOptional: { def: normalizeTypeDef(generics[0]) } };
-    }
-    if (typeDef.name === "Vec" && generics.length === 1) {
-      return { isVec: true, asVec: { def: normalizeTypeDef(generics[0]) } };
-    }
-    return { isUserDefined: true, asUserDefined: { name: typeDef.name } };
-  }
-  return typeDef;
+  resolveType?: TypeResolver;
 }
 
 /**
@@ -104,11 +48,11 @@ export function TypedInput({
     }
     // Try to resolve the type via Sails instance
     if (resolveType) {
-      const resolved = resolveType(name);
-      if (resolved?.def) {
+      const resolved = normalizeResolvedType(resolveType(name));
+      if (resolved) {
         return (
           <TypedInput
-            typeDef={resolved.def}
+            typeDef={resolved}
             value={value}
             onChange={onChange}
             label={label ?? name}
@@ -295,7 +239,7 @@ function OptionalInput({
   label?: string;
   depth: number;
   visited: Set<string>;
-  resolveType?: (name: string) => TypeDef | null;
+  resolveType?: TypeResolver;
 }) {
   const hasValue = value !== null && value !== undefined;
 
@@ -343,7 +287,7 @@ function StructInput({
   label?: string;
   depth: number;
   visited: Set<string>;
-  resolveType?: (name: string) => TypeDef | null;
+  resolveType?: TypeResolver;
 }) {
   const fields = typeDef.asStruct.fields;
   const obj = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
@@ -386,7 +330,7 @@ function VecInput({
   label?: string;
   depth: number;
   visited: Set<string>;
-  resolveType?: (name: string) => TypeDef | null;
+  resolveType?: TypeResolver;
 }) {
   const items = Array.isArray(value) ? value : [];
   const innerDef = typeDef.asVec.def;
@@ -462,7 +406,7 @@ function EnumInput({
   label?: string;
   depth: number;
   visited: Set<string>;
-  resolveType?: (name: string) => TypeDef | null;
+  resolveType?: TypeResolver;
 }) {
   const variants = typeDef.asEnum.variants as Array<{ name: string; def: TypeDef }>;
 

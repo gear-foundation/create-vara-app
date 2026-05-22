@@ -8,6 +8,7 @@ import {
   defaultValue,
   safeJsonStringify,
   type MethodDescriptor,
+  type TypeResolver,
 } from "@/lib/idl-introspect";
 import { TypedInput } from "@/components/TypedInput";
 
@@ -15,6 +16,19 @@ type CallStatus = "idle" | "loading" | "success" | "error";
 
 // Internal methods that panic when called externally
 const INTERNAL_METHODS = new Set(["HandlePing"]);
+
+function createTypeResolver(
+  sails: { resolveInService?: (serviceName: string, typeDecl: { kind: "named"; name: string }) => unknown },
+  serviceName: string,
+): TypeResolver {
+  return (name: string) => {
+    try {
+      return sails.resolveInService?.(serviceName, { kind: "named", name }) ?? null;
+    } catch {
+      return null;
+    }
+  };
+}
 
 export function ManualCallTab({ onTxSuccess }: { onTxSuccess?: () => void }) {
   const { sails, loading: sailsLoading, error: sailsError } = useSails();
@@ -31,6 +45,10 @@ export function ManualCallTab({ onTxSuccess }: { onTxSuccess?: () => void }) {
   const [status, setStatus] = useState<CallStatus>("idle");
 
   const selected: MethodDescriptor | null = methods[selectedIdx] ?? null;
+  const selectedTypeResolver = useMemo(
+    () => (sails && selected ? createTypeResolver(sails, selected.serviceName) : undefined),
+    [sails, selected?.serviceName],
+  );
 
   function handleMethodChange(idx: number) {
     setSelectedIdx(idx);
@@ -39,9 +57,10 @@ export function ManualCallTab({ onTxSuccess }: { onTxSuccess?: () => void }) {
     // Reset arg values for the new method
     const method = methods[idx];
     if (method) {
+      const resolveType = sails ? createTypeResolver(sails, method.serviceName) : undefined;
       const defaults: Record<string, unknown> = {};
       for (const arg of method.args) {
-        defaults[arg.name] = defaultValue(arg.typeDef);
+        defaults[arg.name] = defaultValue(arg.typeDef, undefined, resolveType);
       }
       setArgValues(defaults);
     }
@@ -61,7 +80,7 @@ export function ManualCallTab({ onTxSuccess }: { onTxSuccess?: () => void }) {
 
     // Build ordered args
     const orderedArgs = selected.args.map((arg) =>
-      coerceValue(arg.typeDef, argValues[arg.name]),
+      coerceValue(arg.typeDef, argValues[arg.name], selectedTypeResolver),
     );
 
     setStatus("loading");
@@ -177,6 +196,7 @@ export function ManualCallTab({ onTxSuccess }: { onTxSuccess?: () => void }) {
               value={argValues[arg.name]}
               onChange={(v) => setArgValues((prev) => ({ ...prev, [arg.name]: v }))}
               label={arg.name}
+              resolveType={selectedTypeResolver}
             />
           ))}
         </div>

@@ -5,6 +5,10 @@ import sourceScaffoldTypes from "../../../scripts/scaffold-types.ts?raw";
 import templateScaffoldClient from "../../../create-vara-app/template/scripts/scaffold-client.ts?raw";
 import templateScaffoldTypes from "../../../create-vara-app/template/scripts/scaffold-types.ts?raw";
 import {
+  coerceValue as coerceManualValue,
+  defaultValue as defaultManualValue,
+} from "../lib/idl-introspect";
+import {
   adaptIdlV2,
   getTsType,
   primToTs,
@@ -353,5 +357,37 @@ describe("IDL v2 adapter", () => {
   it("keeps template scaffold scripts in sync with source scripts", () => {
     expect(templateScaffoldClient).toBe(sourceScaffoldClient);
     expect(templateScaffoldTypes).toBe(sourceScaffoldTypes);
+  });
+});
+
+describe("manual call IDL v2 coercion", () => {
+  const settingsDecl = { kind: "named", name: "Settings" };
+  const settingsType = {
+    kind: "struct",
+    name: "Settings",
+    fields: [
+      { name: "enabled", type: "bool" },
+      { name: "limit", type: "u64" },
+    ],
+  };
+  const resolveType = (name: string) => (name === "Settings" ? settingsType : null);
+
+  it("resolves custom struct params before creating defaults", () => {
+    expect(defaultManualValue(settingsDecl, undefined, resolveType)).toEqual({
+      enabled: false,
+      limit: "0",
+    });
+  });
+
+  it("coerces resolved custom struct params without stringifying the object", () => {
+    expect(coerceManualValue(settingsDecl, { enabled: 1, limit: "42" }, resolveType)).toEqual({
+      enabled: true,
+      limit: 42n,
+    });
+  });
+
+  it("preserves unresolved custom params for JSON fallback calls", () => {
+    const raw = { enabled: true, limit: "42" };
+    expect(coerceManualValue({ kind: "named", name: "MissingType" }, raw)).toBe(raw);
   });
 });

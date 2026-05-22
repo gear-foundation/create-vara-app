@@ -6,6 +6,7 @@
 // Re-export ISailsTypeDef shape for consumers
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TypeDef = any;
+export type TypeResolver = (name: string) => TypeDef | null | undefined;
 
 export type MethodKind = "command" | "query";
 
@@ -25,6 +26,119 @@ export interface MethodDescriptor {
 
 function isV2TypeDecl(typeDef: TypeDef): boolean {
   return typeof typeDef === "string" || typeof typeDef?.kind === "string";
+}
+
+function primitiveDef(name: string): TypeDef | null {
+  const flags: Record<string, string> = {
+    "()": "isNull",
+    bool: "isBool",
+    char: "isChar",
+    String: "isStr",
+    u8: "isU8",
+    u16: "isU16",
+    u32: "isU32",
+    u64: "isU64",
+    u128: "isU128",
+    i8: "isI8",
+    i16: "isI16",
+    i32: "isI32",
+    i64: "isI64",
+    i128: "isI128",
+    ActorId: "isActorId",
+    CodeId: "isCodeId",
+    MessageId: "isMessageId",
+    H160: "isH160",
+    H256: "isH256",
+    U256: "isU256",
+  };
+  const flag = flags[name];
+  return flag ? { isPrimitive: true, asPrimitive: { [flag]: true } } : null;
+}
+
+export function normalizeTypeDef(typeDef: TypeDef): TypeDef {
+  if (
+    !typeDef ||
+    typeDef.isPrimitive ||
+    typeDef.isOptional ||
+    typeDef.isVec ||
+    typeDef.isStruct ||
+    typeDef.isEnum ||
+    typeDef.isUserDefined
+  ) {
+    return typeDef;
+  }
+  if (typeof typeDef === "string") {
+    return primitiveDef(typeDef) ?? { isUserDefined: true, asUserDefined: { name: typeDef } };
+  }
+  if (typeDef.kind === "slice") return { isVec: true, asVec: { def: normalizeTypeDef(typeDef.item) } };
+  if (typeDef.kind === "array") return { isVec: true, asVec: { def: normalizeTypeDef(typeDef.item) } };
+  if (typeDef.kind === "tuple") {
+    return {
+      isStruct: true,
+      asStruct: {
+        fields: typeDef.types.map((item: TypeDef, i: number) => ({
+          name: `field${i}`,
+          def: normalizeTypeDef(item),
+        })),
+      },
+    };
+  }
+  if (typeDef.kind === "generic") return { isUserDefined: true, asUserDefined: { name: typeDef.name } };
+  if (typeDef.kind === "named") {
+    const generics = typeDef.generics ?? [];
+    if (typeDef.name === "Option" && generics.length === 1) {
+      return { isOptional: true, asOptional: { def: normalizeTypeDef(generics[0]) } };
+    }
+    if ((typeDef.name === "Vec" || typeDef.name === "Array") && generics.length === 1) {
+      return { isVec: true, asVec: { def: normalizeTypeDef(generics[0]) } };
+    }
+    return { isUserDefined: true, asUserDefined: { name: typeDef.name } };
+  }
+  return typeDef;
+}
+
+function typeUnitToDef(typeUnit: TypeDef): TypeDef | null {
+  if (!typeUnit?.name) return null;
+  if (typeUnit.kind === "struct") {
+    return {
+      isStruct: true,
+      asStruct: {
+        fields: (typeUnit.fields ?? []).map((field: TypeDef, index: number) => ({
+          name: field.name ?? `field${index}`,
+          def: normalizeTypeDef(field.type),
+        })),
+      },
+    };
+  }
+  if (typeUnit.kind === "enum") {
+    return {
+      isEnum: true,
+      asEnum: {
+        variants: (typeUnit.variants ?? []).map((variant: TypeDef) => ({
+          name: variant.name,
+          def: (variant.fields ?? []).length === 0
+            ? primitiveDef("()")
+            : {
+                isStruct: true,
+                asStruct: {
+                  fields: variant.fields.map((field: TypeDef, index: number) => ({
+                    name: field.name ?? `field${index}`,
+                    def: normalizeTypeDef(field.type),
+                  })),
+                },
+              },
+        })),
+      },
+    };
+  }
+  if (typeUnit.kind === "alias") return normalizeTypeDef(typeUnit.target);
+  return null;
+}
+
+export function normalizeResolvedType(resolved: TypeDef): TypeDef | null {
+  if (!resolved) return null;
+  if (resolved.def) return normalizeTypeDef(resolved.def);
+  return typeUnitToDef(resolved) ?? normalizeTypeDef(resolved);
 }
 
 function getV2TypeLabel(typeDef: TypeDef): string {
@@ -173,20 +287,13 @@ export function getTypeLabel(typeDef: TypeDef): string {
 /**
  * Get a sensible default value for a type.
  */
-export function defaultValue(typeDef: TypeDef, visited?: Set<string>): unknown {
-  if (!typeDef) return null;
-  if (isV2TypeDecl(typeDef)) {
-    const label = getV2TypeLabel(typeDef);
-    if (label === "null") return null;
-    if (label === "bool") return false;
-    if (label === "str" || label === "char") return "";
-    if (["u8", "u16", "u32", "i8", "i16", "i32"].includes(label)) return 0;
-    if (["u64", "u128", "u256", "i64", "i128"].includes(label)) return "0";
-    if (label.startsWith("opt ")) return null;
-    if (label.startsWith("vec ")) return [];
-    if (label === "actor_id" || label === "code_id" || label === "message_id" || label === "h256" || label === "h160") return "";
-    return "";
-  }
+export function defaultValue(
+  rawTypeDef: TypeDef,
+  visited = new Set<string>(),
+  resolveType?: TypeResolver,
+): unknown {
+  if (!rawTypeDef) return null;
+  const typeDef = normalizeTypeDef(rawTypeDef);
 
   if (typeDef.isPrimitive) {
     const p = typeDef.asPrimitive;
@@ -207,7 +314,7 @@ export function defaultValue(typeDef: TypeDef, visited?: Set<string>): unknown {
   if (typeDef.isStruct) {
     const obj: Record<string, unknown> = {};
     for (const f of typeDef.asStruct.fields) {
-      obj[f.name] = defaultValue(f.def, visited);
+      obj[f.name] = defaultValue(f.def, visited, resolveType);
     }
     return obj;
   }
@@ -215,12 +322,18 @@ export function defaultValue(typeDef: TypeDef, visited?: Set<string>): unknown {
   if (typeDef.isEnum) {
     const variants = typeDef.asEnum.variants;
     if (variants.length > 0) {
-      return { [variants[0].name]: variants[0].def ? defaultValue(variants[0].def, visited) : null };
+      return { [variants[0].name]: variants[0].def ? defaultValue(variants[0].def, visited, resolveType) : null };
     }
     return null;
   }
 
-  if (typeDef.isUserDefined) return "";
+  if (typeDef.isUserDefined) {
+    const name = typeDef.asUserDefined.name;
+    if (visited.has(name)) return "";
+    const resolved = normalizeResolvedType(resolveType?.(name));
+    if (resolved) return defaultValue(resolved, new Set([...visited, name]), resolveType);
+    return "";
+  }
 
   // Fallback for result, map, fixedSizeArray
   return "";
@@ -229,29 +342,14 @@ export function defaultValue(typeDef: TypeDef, visited?: Set<string>): unknown {
 /**
  * Coerce a form value to what Sails expects.
  */
-export function coerceValue(typeDef: TypeDef, raw: unknown): unknown {
-  if (!typeDef || raw === null || raw === undefined) return raw;
-  if (isV2TypeDecl(typeDef)) {
-    const label = getV2TypeLabel(typeDef);
-    if (label === "null") return null;
-    if (label === "bool") return Boolean(raw);
-    if (["u8", "u16", "u32", "i8", "i16", "i32"].includes(label)) return Number(raw);
-    if (["u64", "u128", "u256", "i64", "i128"].includes(label)) {
-      try {
-        return BigInt(String(raw));
-      } catch {
-        return Number(raw);
-      }
-    }
-    if (typeDef.kind === "named" && typeDef.name === "Option") {
-      return raw === null ? null : coerceValue(typeDef.generics?.[0], raw);
-    }
-    if (label.startsWith("vec ") && Array.isArray(raw)) {
-      const inner = typeDef.kind === "slice" ? typeDef.item : typeDef.generics?.[0];
-      return raw.map((item) => coerceValue(inner, item));
-    }
-    return String(raw);
-  }
+export function coerceValue(
+  rawTypeDef: TypeDef,
+  raw: unknown,
+  resolveType?: TypeResolver,
+  visited = new Set<string>(),
+): unknown {
+  if (!rawTypeDef || raw === null || raw === undefined) return raw;
+  const typeDef = normalizeTypeDef(rawTypeDef);
 
   if (typeDef.isPrimitive) {
     const p = typeDef.asPrimitive;
@@ -274,21 +372,29 @@ export function coerceValue(typeDef: TypeDef, raw: unknown): unknown {
 
   if (typeDef.isOptional) {
     if (raw === null) return null;
-    return coerceValue(typeDef.asOptional.def, raw);
+    return coerceValue(typeDef.asOptional.def, raw, resolveType, visited);
   }
 
   if (typeDef.isVec) {
     if (!Array.isArray(raw)) return raw;
-    return raw.map((item) => coerceValue(typeDef.asVec.def, item));
+    return raw.map((item) => coerceValue(typeDef.asVec.def, item, resolveType, visited));
   }
 
   if (typeDef.isStruct) {
     if (typeof raw !== "object" || raw === null) return raw;
     const obj: Record<string, unknown> = {};
     for (const f of typeDef.asStruct.fields) {
-      obj[f.name] = coerceValue(f.def, (raw as Record<string, unknown>)[f.name]);
+      obj[f.name] = coerceValue(f.def, (raw as Record<string, unknown>)[f.name], resolveType, visited);
     }
     return obj;
+  }
+
+  if (typeDef.isUserDefined) {
+    const name = typeDef.asUserDefined.name;
+    if (visited.has(name)) return raw;
+    const resolved = normalizeResolvedType(resolveType?.(name));
+    if (resolved) return coerceValue(resolved, raw, resolveType, new Set([...visited, name]));
+    return raw;
   }
 
   return raw;
