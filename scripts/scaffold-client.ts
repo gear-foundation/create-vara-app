@@ -545,7 +545,7 @@ function resolveStructFields(program: any, typeDef: any): any[] | null {
   return null;
 }
 
-export function generateStatePanel(
+function generateStatePanel(
   queries: any[],
   program: any,
   idlRelPath: string,
